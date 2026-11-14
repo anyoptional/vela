@@ -188,8 +188,16 @@ func (r *Request) Do(ctx context.Context) (*Response, error) {
 	}
 
 	if lastTransportErr != nil {
+		cause := lastTransportErr
+		for {
+			var transportErr *TransportError
+			if !errors.As(cause, &transportErr) || transportErr.Err == nil {
+				break
+			}
+			cause = transportErr.Err
+		}
 		return nil, &TransportError{
-			Err: fmt.Errorf("after %d attempts: %w", attempts, lastTransportErr),
+			Err: fmt.Errorf("after %d attempts: %w", attempts, cause),
 		}
 	}
 	if lastResponse != nil {

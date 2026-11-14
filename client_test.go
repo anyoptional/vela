@@ -374,6 +374,22 @@ func TestDo_TransportErrorsExhausted(t *testing.T) {
 	}
 }
 
+func TestDo_TransportErrorAttempts(t *testing.T) {
+	transport := &fakeTransport{results: map[string][]fakeTransportResult{
+		"a": {{err: &TransportError{Err: errors.New("connection failed")}}},
+	}, next: make(map[string]int)}
+	client := newFailoverTestClient(
+		fakeDiscovery{instances: []Instance{{ID: "a", Host: "a", Port: 8080}}},
+		transport,
+		WithMaxAttempts(1),
+	)
+
+	_, err := client.NewRequest("orders", http.MethodGet, "/orders").Do(t.Context())
+	if got, want := err.Error(), "jinx: transport: after 1 attempts: connection failed"; got != want {
+		t.Errorf("Do() error = %q, want %q", got, want)
+	}
+}
+
 func TestDo_MarshalErrorNoNetwork(t *testing.T) {
 	transport := &fakeTransport{next: make(map[string]int)}
 	client := newFailoverTestClient(

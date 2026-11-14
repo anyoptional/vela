@@ -79,6 +79,7 @@ func New(discovery DiscoveryClient, opts ...Option) *Client {
 		httpClient: cfg.httpClient,
 		logger:     cfg.logger,
 		cool:       newCooldownTracker(cfg.cooldown),
+		transport:  newRestyTransport(cfg, cfg.logger),
 	}
 }
 
