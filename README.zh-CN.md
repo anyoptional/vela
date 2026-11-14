@@ -110,6 +110,8 @@ goctl api plugin --plugin goctl-jinx -api order.api -dir .
 
 仓库根目录的 workspace 管理 core、Eureka 和 goctl 模块。在各模块目录运行测试和 vet；workspace 会解析本地模块依赖。
 
+子模块当前依赖 workspace 占位版本 `github.com/anyoptional/jinx v0.0.0`。在发布子模块供 workspace 之外使用前，必须先将其更新为已发布的 core 版本。
+
 核心模块当前在内部传输边界使用 Resty v3 RC-4；Resty 类型不会进入 jinx 的公开 API。
 
 ## License

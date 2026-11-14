@@ -110,6 +110,8 @@ The plugin emits `client.go` with an interface and a `jinx.Client` implementatio
 
 The repository root is the workspace for the core, Eureka, and goctl modules. Run tests and vet from each module directory; the workspace resolves local module dependencies.
 
+The child modules currently require the workspace placeholder `github.com/anyoptional/jinx v0.0.0`. Update that requirement to a released core version before publishing either child module for use outside this workspace.
+
 The core currently uses Resty v3 RC-4 behind its internal transport boundary; Resty types are not part of jinx's public API.
 
 ## License

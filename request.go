@@ -71,6 +71,11 @@ func (r *Request) Do(ctx context.Context) (*Response, error) {
 		return nil, errors.New("jinx: discovery client is nil")
 	}
 
+	resolvedPath, err := substitutePathParams(r.path, r.pathParams)
+	if err != nil {
+		return nil, err
+	}
+
 	instances, err := r.c.discovery.Instances(ctx, r.serviceID)
 	if err != nil {
 		return nil, fmt.Errorf("jinx: discover %q: %w", r.serviceID, err)
@@ -120,10 +125,7 @@ func (r *Request) Do(ctx context.Context) (*Response, error) {
 		if err != nil {
 			return nil, fmt.Errorf("jinx: choose instance: %w", err)
 		}
-		targetURL, err := buildURL(instance, r.path, r.pathParams)
-		if err != nil {
-			return nil, err
-		}
+		targetURL := buildURLFromPath(instance, resolvedPath)
 
 		var bodyReader io.Reader
 		if r.body != nil {

@@ -17,6 +17,14 @@ func joinPath(prefix, path string) string {
 }
 
 func buildURL(ins Instance, path string, pathParams map[string]string) (string, error) {
+	path, err := substitutePathParams(path, pathParams)
+	if err != nil {
+		return "", err
+	}
+	return buildURLFromPath(ins, path), nil
+}
+
+func substitutePathParams(path string, pathParams map[string]string) (string, error) {
 	if path == "" {
 		path = "/"
 	}
@@ -33,7 +41,10 @@ func buildURL(ins Instance, path string, pathParams map[string]string) (string, 
 		}
 		segments[i] = url.PathEscape(value)
 	}
-	path = strings.Join(segments, "/")
+	return strings.Join(segments, "/"), nil
+}
+
+func buildURLFromPath(ins Instance, path string) string {
 	if !strings.HasPrefix(path, "/") {
 		path = "/" + path
 	}
@@ -43,5 +54,5 @@ func buildURL(ins Instance, path string, pathParams map[string]string) (string, 
 		scheme = "https"
 	}
 	host := net.JoinHostPort(ins.Host, strconv.Itoa(ins.Port))
-	return scheme + "://" + host + path, nil
+	return scheme + "://" + host + path
 }

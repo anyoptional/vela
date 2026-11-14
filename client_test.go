@@ -110,6 +110,7 @@ func TestNew_InvalidOptionsFallback(t *testing.T) {
 type fakeDiscovery struct {
 	instances []Instance
 	err       error
+	calls     *int
 }
 
 func (d fakeDiscovery) Description() string {
@@ -117,6 +118,9 @@ func (d fakeDiscovery) Description() string {
 }
 
 func (d fakeDiscovery) Instances(context.Context, string) ([]Instance, error) {
+	if d.calls != nil {
+		(*d.calls)++
+	}
 	return d.instances, d.err
 }
 
@@ -471,8 +475,12 @@ func TestClient_PrefixJoin(t *testing.T) {
 
 func TestDo_MissingPathParamNoNetwork(t *testing.T) {
 	transport := &fakeTransport{next: make(map[string]int)}
+	discoveryCalls := 0
 	client := newFailoverTestClient(
-		fakeDiscovery{instances: []Instance{{ID: "a", Host: "a", Port: 8080}}},
+		fakeDiscovery{
+			instances: []Instance{{ID: "a", Host: "a", Port: 8080}},
+			calls:     &discoveryCalls,
+		},
 		transport,
 	)
 
@@ -483,6 +491,9 @@ func TestDo_MissingPathParamNoNetwork(t *testing.T) {
 	hosts, _ := transport.snapshot()
 	if len(hosts) != 0 {
 		t.Errorf("transport calls = %d, want 0", len(hosts))
+	}
+	if discoveryCalls != 0 {
+		t.Errorf("discovery calls = %d, want 0", discoveryCalls)
 	}
 }
 
