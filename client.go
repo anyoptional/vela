@@ -123,8 +123,10 @@ func WithHTTPClient(c *http.Client) Option {
 
 // NewRequest creates a request builder for the given service and route.
 func (c *Client) NewRequest(serviceID, method, path string) *Request {
-	return &Request{}
+	return &Request{
+		serviceID: serviceID,
+		method:    method,
+		path:      path,
+		c:         c,
+	}
 }
-
-// Request is a builder for a service HTTP request.
-type Request struct{}
