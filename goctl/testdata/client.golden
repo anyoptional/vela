@@ -1,0 +1,46 @@
+package client
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+
+	types "example.com/svc/internal/types"
+	"github.com/anyoptional/jinx"
+)
+
+type OrderApi interface {
+	CreateOrder(ctx context.Context, req *types.CreateOrderReq) (*types.CreateOrderResp, error)
+
+	GetOrder(ctx context.Context, id int64, req *types.GetOrderReq) (*types.GetOrderResp, error)
+}
+
+type orderApiClient struct {
+	c *jinx.Client
+}
+
+func NewOrderApiClient(c *jinx.Client) OrderApi {
+	return &orderApiClient{c: c}
+}
+
+func (c *orderApiClient) CreateOrder(ctx context.Context, req *types.CreateOrderReq) (*types.CreateOrderResp, error) {
+	request := c.c.NewRequest("order-api", http.MethodPost, "/api/v1/orders")
+	request.SetBody(req)
+	var result types.CreateOrderResp
+	request.SetResult(&result)
+	if _, err := request.Do(ctx); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (c *orderApiClient) GetOrder(ctx context.Context, id int64, req *types.GetOrderReq) (*types.GetOrderResp, error) {
+	request := c.c.NewRequest("order-api", http.MethodGet, "/api/v1/orders/:id")
+	request.SetPathParam("id", fmt.Sprint(id))
+	var result types.GetOrderResp
+	request.SetResult(&result)
+	if _, err := request.Do(ctx); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}

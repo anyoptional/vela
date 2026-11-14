@@ -1,0 +1,40 @@
+syntax = "v1"
+
+type GetOrderReq {
+	Id int64 `path:"id"`
+}
+
+type GetOrderResp {
+	Id int64 `json:"id"`
+}
+
+type CreateOrderReq {
+	Name string `json:"name"`
+}
+
+type CreateOrderResp {
+	Id int64 `json:"id"`
+}
+
+type SearchOrderReq {
+	Status string `form:"status"`
+}
+
+@server (
+	prefix: /api/v1
+)
+service order-api {
+	@handler GetOrder
+	get /orders/:id (GetOrderReq) returns (GetOrderResp)
+
+	@handler CreateOrder
+	post /orders (CreateOrderReq) returns (CreateOrderResp)
+}
+
+@server (
+	prefix: /admin
+)
+service order-api {
+	@handler SearchOrders
+	get /orders (SearchOrderReq) returns (GetOrderResp)
+}
