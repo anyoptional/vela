@@ -31,6 +31,8 @@ type Client struct {
 	cfg        config
 	httpClient *http.Client
 	logger     *slog.Logger
+	cool       cooldownTracker
+	transport  transport
 }
 
 // New constructs a Client with the supplied discovery source and options.
@@ -76,6 +78,7 @@ func New(discovery DiscoveryClient, opts ...Option) *Client {
 		cfg:        cfg,
 		httpClient: cfg.httpClient,
 		logger:     cfg.logger,
+		cool:       newCooldownTracker(cfg.cooldown),
 	}
 }
 

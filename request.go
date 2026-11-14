@@ -1,8 +1,12 @@
 package jinx
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 )
 
@@ -59,8 +63,147 @@ func (r *Request) SetResult(v any) *Request {
 }
 
 // Do executes the request.
-func (r *Request) Do(context.Context) (*Response, error) {
-	return nil, errors.New("jinx: request execution is not implemented")
+func (r *Request) Do(ctx context.Context) (*Response, error) {
+	if r == nil || r.c == nil {
+		return nil, errors.New("jinx: request has no client")
+	}
+	if r.c.discovery == nil {
+		return nil, errors.New("jinx: discovery client is nil")
+	}
+
+	instances, err := r.c.discovery.Instances(ctx, r.serviceID)
+	if err != nil {
+		return nil, fmt.Errorf("jinx: discover %q: %w", r.serviceID, err)
+	}
+	if len(instances) == 0 {
+		return nil, ErrNoInstances
+	}
+
+	var body []byte
+	if r.body != nil {
+		body, err = json.Marshal(r.body)
+		if err != nil {
+			return nil, fmt.Errorf("jinx: marshal request body: %w", err)
+		}
+	}
+	if r.c.transport == nil {
+		return nil, errors.New("jinx: transport is not configured")
+	}
+
+	tried := make(map[insKey]struct{}, len(instances))
+	attempts := 0
+	var lastResponse *Response
+	var lastStatusErr error
+	var lastTransportErr error
+
+	for attempts < r.c.cfg.maxAttempts {
+		candidates := make([]Instance, 0, len(instances))
+		available := make([]Instance, 0, len(instances))
+		for _, instance := range instances {
+			key := keyFor(instance)
+			if _, ok := tried[key]; ok {
+				continue
+			}
+			candidates = append(candidates, instance)
+			if !r.c.cool.isCooling(instance) {
+				available = append(available, instance)
+			}
+		}
+		if len(available) > 0 {
+			candidates = available
+		}
+		if len(candidates) == 0 {
+			break
+		}
+
+		instance, err := r.c.lb.Choose(ctx, r.serviceID, candidates)
+		if err != nil {
+			return nil, fmt.Errorf("jinx: choose instance: %w", err)
+		}
+		targetURL, err := buildURL(instance, r.path, r.pathParams)
+		if err != nil {
+			return nil, err
+		}
+
+		var bodyReader io.Reader
+		if r.body != nil {
+			bodyReader = bytes.NewReader(body)
+		}
+		httpRequest, err := http.NewRequestWithContext(ctx, r.method, targetURL, bodyReader)
+		if err != nil {
+			return nil, fmt.Errorf("jinx: build request: %w", err)
+		}
+		if len(r.query) > 0 {
+			query := httpRequest.URL.Query()
+			for key, value := range r.query {
+				query.Set(key, value)
+			}
+			httpRequest.URL.RawQuery = query.Encode()
+		}
+		httpRequest.Header = r.headers.Clone()
+
+		attempts++
+		httpResponse, err := r.c.transport(ctx, httpRequest)
+		tried[keyFor(instance)] = struct{}{}
+		if err != nil {
+			r.c.cool.mark(instance)
+			lastTransportErr = err
+			lastStatusErr = nil
+			continue
+		}
+		if httpResponse == nil {
+			lastTransportErr = errors.New("jinx: transport returned nil response")
+			lastStatusErr = nil
+			continue
+		}
+
+		responseBody, readErr := readResponseBody(httpResponse)
+		if readErr != nil {
+			r.c.cool.mark(instance)
+			lastTransportErr = fmt.Errorf("read response body: %w", readErr)
+			lastStatusErr = nil
+			continue
+		}
+		lastTransportErr = nil
+		response := &Response{
+			StatusCode: httpResponse.StatusCode,
+			Body:       responseBody,
+		}
+		lastResponse = response
+		if httpResponse.StatusCode >= http.StatusOK && httpResponse.StatusCode < http.StatusMultipleChoices {
+			if r.result != nil {
+				if err := json.Unmarshal(responseBody, r.result); err != nil {
+					return response, fmt.Errorf("jinx: decode result: %w", err)
+				}
+			}
+			return response, nil
+		}
+
+		excerpt := responseBody[:min(len(responseBody), 512)]
+		lastStatusErr = fmt.Errorf("jinx: unexpected status %d: %s", httpResponse.StatusCode, excerpt)
+		if httpResponse.StatusCode >= http.StatusInternalServerError && httpResponse.StatusCode <= 599 {
+			continue
+		}
+		return response, lastStatusErr
+	}
+
+	if lastTransportErr != nil {
+		return nil, &TransportError{
+			Err: fmt.Errorf("after %d attempts: %w", attempts, lastTransportErr),
+		}
+	}
+	if lastResponse != nil {
+		return lastResponse, lastStatusErr
+	}
+	return nil, ErrNoInstances
+}
+
+func readResponseBody(response *http.Response) ([]byte, error) {
+	if response.Body == nil {
+		return nil, nil
+	}
+	defer response.Body.Close()
+	return io.ReadAll(response.Body)
 }
 
 // Response contains the status and body returned by an HTTP request.
