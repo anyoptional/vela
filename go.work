@@ -1,0 +1,9 @@
+go 1.26.0
+
+use (
+	.
+	./eureka
+	./goctl
+)
+
+replace github.com/anyoptional/vela v0.0.0 => .

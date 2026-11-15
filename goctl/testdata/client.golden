@@ -1,0 +1,221 @@
+package client
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net/http"
+
+	types "example.com/svc/types"
+	"github.com/anyoptional/vela"
+)
+
+type OrderApi interface {
+	CreateOrder(ctx context.Context, req *types.CreateOrderReq) (*types.CreateOrderResp, error)
+
+	ListOrders(ctx context.Context, req *types.SearchOrderReq) (*types.GetOrderResp, error)
+
+	GetOrder(ctx context.Context, req *types.GetOrderReq) (*types.GetOrderResp, error)
+
+	DeleteOrder(ctx context.Context, req *types.GetOrderReq) error
+
+	UpdateOrderStatus(ctx context.Context, req *types.UpdateStatusReq) (*types.GetOrderResp, error)
+}
+
+type orderApiClient struct {
+	c               *vela.Client
+	fallback        OrderApi
+	fallbackFactory func(context.Context, *vela.Failure, *vela.Response) (OrderApi, error)
+	availability    func(*vela.Failure) bool
+}
+
+type OrderApiClientConfig struct {
+	Target          vela.Target
+	Discovery       vela.DiscoveryClient
+	ClientOptions   []vela.Option
+	Fallback        OrderApi
+	FallbackFactory func(context.Context, *vela.Failure, *vela.Response) (OrderApi, error)
+	Availability    func(*vela.Failure) bool
+}
+
+// defaultTarget is derived from the api file: the service block name is the
+// service ID and the @server url annotation selects direct mode.
+var defaultTarget = vela.Target{Name: "order-api", URL: "http://orders.test"}
+
+func NewOrderApiClient(config OrderApiClientConfig) (OrderApi, error) {
+	if config.Fallback != nil && config.FallbackFactory != nil {
+		return nil, errors.New("vela: fallback and fallback factory are mutually exclusive")
+	}
+	target := config.Target
+	if target.Name == "" {
+		target = defaultTarget
+	}
+	options := append([]vela.Option{vela.WithDiscovery(config.Discovery)}, config.ClientOptions...)
+	client, err := vela.New(target, options...)
+	if err != nil {
+		return nil, err
+	}
+	availability := config.Availability
+	if availability == nil {
+		availability = vela.DefaultAvailability
+	}
+	return &orderApiClient{
+		c:               client,
+		fallback:        config.Fallback,
+		fallbackFactory: config.FallbackFactory,
+		availability:    availability,
+	}, nil
+}
+
+func (c *orderApiClient) resolveFallback(ctx context.Context, failure *vela.Failure, response *vela.Response) (OrderApi, bool, error) {
+	if ctx.Err() != nil || !c.availability(failure) {
+		return nil, false, nil
+	}
+	if c.fallback == nil && c.fallbackFactory == nil {
+		return nil, false, nil
+	}
+	fallback := c.fallback
+	if c.fallbackFactory != nil {
+		var err error
+		fallback, err = c.fallbackFactory(ctx, failure, response)
+		if err != nil {
+			return nil, true, fmt.Errorf("vela: fallback factory: %w", err)
+		}
+		if fallback == nil {
+			return nil, true, errors.New("vela: fallback factory returned nil service")
+		}
+	}
+	return fallback, true, nil
+}
+
+func (c *orderApiClient) CreateOrder(ctx context.Context, req *types.CreateOrderReq) (*types.CreateOrderResp, error) {
+	request := c.c.NewRequest(http.MethodPost, "/api/v1/orders")
+	request.SetBody(map[string]any{
+		"name": req.Name,
+	})
+	var result types.CreateOrderResp
+	request.SetResult(&result)
+	response, err := request.Do(ctx)
+	if err != nil {
+		var failure *vela.Failure
+		if errors.As(err, &failure) {
+			fallback, used, fallbackErr := c.resolveFallback(ctx, failure, response)
+			if fallbackErr != nil {
+				return nil, errors.Join(err, fallbackErr)
+			}
+			if used {
+				result, fallbackErr := fallback.CreateOrder(ctx, req)
+				if fallbackErr != nil {
+					return nil, errors.Join(err, fmt.Errorf("vela: fallback: %w", fallbackErr))
+				}
+				return result, nil
+			}
+		}
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (c *orderApiClient) ListOrders(ctx context.Context, req *types.SearchOrderReq) (*types.GetOrderResp, error) {
+	request := c.c.NewRequest(http.MethodGet, "/api/v1/orders")
+	request.SetQueryParam("status", fmt.Sprint(req.Status))
+	var result types.GetOrderResp
+	request.SetResult(&result)
+	response, err := request.Do(ctx)
+	if err != nil {
+		var failure *vela.Failure
+		if errors.As(err, &failure) {
+			fallback, used, fallbackErr := c.resolveFallback(ctx, failure, response)
+			if fallbackErr != nil {
+				return nil, errors.Join(err, fallbackErr)
+			}
+			if used {
+				result, fallbackErr := fallback.ListOrders(ctx, req)
+				if fallbackErr != nil {
+					return nil, errors.Join(err, fmt.Errorf("vela: fallback: %w", fallbackErr))
+				}
+				return result, nil
+			}
+		}
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (c *orderApiClient) GetOrder(ctx context.Context, req *types.GetOrderReq) (*types.GetOrderResp, error) {
+	request := c.c.NewRequest(http.MethodGet, "/api/v1/orders/:id")
+	request.SetPathParam("id", fmt.Sprint(req.Id))
+	request.SetHeader("token", fmt.Sprint(req.Token))
+	var result types.GetOrderResp
+	request.SetResult(&result)
+	response, err := request.Do(ctx)
+	if err != nil {
+		var failure *vela.Failure
+		if errors.As(err, &failure) {
+			fallback, used, fallbackErr := c.resolveFallback(ctx, failure, response)
+			if fallbackErr != nil {
+				return nil, errors.Join(err, fallbackErr)
+			}
+			if used {
+				result, fallbackErr := fallback.GetOrder(ctx, req)
+				if fallbackErr != nil {
+					return nil, errors.Join(err, fmt.Errorf("vela: fallback: %w", fallbackErr))
+				}
+				return result, nil
+			}
+		}
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (c *orderApiClient) DeleteOrder(ctx context.Context, req *types.GetOrderReq) error {
+	request := c.c.NewRequest(http.MethodDelete, "/api/v1/orders/:id")
+	request.SetPathParam("id", fmt.Sprint(req.Id))
+	request.SetHeader("token", fmt.Sprint(req.Token))
+	response, err := request.Do(ctx)
+	if err != nil {
+		var failure *vela.Failure
+		if errors.As(err, &failure) {
+			fallback, used, fallbackErr := c.resolveFallback(ctx, failure, response)
+			if fallbackErr != nil {
+				return errors.Join(err, fallbackErr)
+			}
+			if used {
+				if fallbackErr := fallback.DeleteOrder(ctx, req); fallbackErr != nil {
+					return errors.Join(err, fmt.Errorf("vela: fallback: %w", fallbackErr))
+				}
+				return nil
+			}
+		}
+		return err
+	}
+	return nil
+}
+
+func (c *orderApiClient) UpdateOrderStatus(ctx context.Context, req *types.UpdateStatusReq) (*types.GetOrderResp, error) {
+	request := c.c.NewRequest(http.MethodPost, "/api/v1/orders/:id/status")
+	request.SetPathParam("id", fmt.Sprint(req.Id))
+	request.SetFormParam("status", fmt.Sprint(req.Status))
+	var result types.GetOrderResp
+	request.SetResult(&result)
+	response, err := request.Do(ctx)
+	if err != nil {
+		var failure *vela.Failure
+		if errors.As(err, &failure) {
+			fallback, used, fallbackErr := c.resolveFallback(ctx, failure, response)
+			if fallbackErr != nil {
+				return nil, errors.Join(err, fallbackErr)
+			}
+			if used {
+				result, fallbackErr := fallback.UpdateOrderStatus(ctx, req)
+				if fallbackErr != nil {
+					return nil, errors.Join(err, fmt.Errorf("vela: fallback: %w", fallbackErr))
+				}
+				return result, nil
+			}
+		}
+		return nil, err
+	}
+	return &result, nil
+}

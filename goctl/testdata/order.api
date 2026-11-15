@@ -1,0 +1,56 @@
+syntax = "v1"
+
+type GetOrderReq {
+	Id int64 `path:"id"`
+	Token string `header:"token"`
+}
+
+type GetOrderResp {
+	Id int64 `json:"id"`
+}
+
+type CreateOrderReq {
+	Name string `json:"name"`
+}
+
+type CreateOrderResp {
+	Id int64 `json:"id"`
+}
+
+type SearchOrderReq {
+	Status string `form:"status"`
+}
+
+type UpdateStatusReq {
+	Id int64 `path:"id"`
+	Status string `form:"status"`
+}
+
+@server (
+	prefix: /api/v1
+	url: "http://orders.test"
+)
+service order-api {
+	@handler GetOrder
+	get /orders/:id (GetOrderReq) returns (GetOrderResp)
+
+	@handler CreateOrder
+	post /orders (CreateOrderReq) returns (CreateOrderResp)
+
+	@handler DeleteOrder
+	delete /orders/:id (GetOrderReq)
+
+	@handler ListOrders
+	get /orders (SearchOrderReq) returns (GetOrderResp)
+
+	@handler UpdateOrderStatus
+	post /orders/:id/status (UpdateStatusReq) returns (GetOrderResp)
+}
+
+@server (
+	prefix: /admin
+)
+service order-api {
+	@handler SearchOrders
+	get /orders (SearchOrderReq) returns (GetOrderResp)
+}

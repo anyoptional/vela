@@ -1,0 +1,15 @@
+syntax = "v1"
+
+type MixedReq {
+	Name string `json:"name"`
+	Status string `form:"status"`
+}
+
+type MixedResp {
+	Ok bool `json:"ok"`
+}
+
+service mixed-api {
+	@handler Mixed
+	post /mixed (MixedReq) returns (MixedResp)
+}
