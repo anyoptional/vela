@@ -57,6 +57,19 @@ func TestGenerate_MixedJSONAndFormError(t *testing.T) {
 	}
 }
 
+func TestGenerate_ConflictingURLAnnotations(t *testing.T) {
+	api := parseFixture(t)
+	for i, group := range api.Service.Groups {
+		group.Annotation.Properties["url"] = fmt.Sprintf("http://host%d.test", i)
+	}
+	dir := t.TempDir()
+	writeModuleFile(t, dir)
+	err := gen(api, dir, "")
+	if err == nil || !strings.Contains(err.Error(), "conflicting url annotations") {
+		t.Fatalf("gen() error = %v, want conflicting url annotations error", err)
+	}
+}
+
 func TestGenerate_DeleteHasNoBody(t *testing.T) {
 	api := parseFixture(t)
 	api.Service.Groups = api.Service.Groups[:1]
@@ -593,6 +606,28 @@ func TestTagWiring(t *testing.T) {
 	}
 	if gotFormBody != "status=done" {
 		t.Errorf("form body = %q, want status=done", gotFormBody)
+	}
+}
+
+func TestGeneratedDefaultTarget(t *testing.T) {
+	var gotHost string
+	client, err := NewOrderApiClient(OrderApiClientConfig{
+		ClientOptions: []jinx.Option{
+			jinx.WithMaxAttempts(1),
+			jinx.WithTransport(func(_ context.Context, req *http.Request) (*http.Response, error) {
+				gotHost = req.URL.Host
+				return response(req, http.StatusOK, "{\"id\":1}"), nil
+			}),
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewOrderApiClient(): %v", err)
+	}
+	if _, err := client.GetOrder(t.Context(), &types.GetOrderReq{Id: 1}); err != nil {
+		t.Fatalf("GetOrder(): %v", err)
+	}
+	if gotHost != "orders.test" {
+		t.Errorf("host = %q, want orders.test (target derived from api file)", gotHost)
 	}
 }
 `

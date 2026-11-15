@@ -29,6 +29,8 @@ type clientTemplateData struct {
 	Constructor      string
 	TypesPackage     string
 	FileBase         string
+	TargetName       string
+	TargetURL        string
 	HasTypes         bool
 	Routes           []routeTemplateData
 }
@@ -94,7 +96,14 @@ func gen(api *spec.ApiSpec, dir, style string) error {
 		return fmt.Errorf("jinx-goctl: invalid generated client name for service %q", api.Service.Name)
 	}
 
+	targetURL := ""
 	for _, group := range api.Service.Groups {
+		if url := group.Annotation.Properties["url"]; url != "" {
+			if targetURL != "" && targetURL != url {
+				return fmt.Errorf("jinx-goctl: conflicting url annotations: %q vs %q", targetURL, url)
+			}
+			targetURL = url
+		}
 		prefix := group.Annotation.Properties[spec.RoutePrefixKey]
 		for _, route := range group.Routes {
 			generated, err := generateRoute(prefix, route)
@@ -105,6 +114,8 @@ func gen(api *spec.ApiSpec, dir, style string) error {
 			data.HasTypes = data.HasTypes || generated.RequestType != "" || generated.ResponseType != ""
 		}
 	}
+	data.TargetName = api.Service.Name
+	data.TargetURL = targetURL
 	if len(data.Routes) == 0 {
 		return errors.New("jinx-goctl: service has no routes")
 	}

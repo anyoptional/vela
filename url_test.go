@@ -111,13 +111,11 @@ func TestBuildDirectURL(t *testing.T) {
 	tests := []struct {
 		name    string
 		baseURL string
-		prefix  string
 		path    string
 		want    string
 	}{
 		{name: "plain", baseURL: "http://h:8080", path: "/a", want: "http://h:8080/a"},
 		{name: "base path joins", baseURL: "http://h:8080/base", path: "/a", want: "http://h:8080/base/a"},
-		{name: "prefix joins", baseURL: "http://h:8080", prefix: "/v1", path: "/orders/:id", want: "http://h:8080/v1/orders/:id"},
 		{name: "space escaped", baseURL: "http://h:8080", path: "/a b", want: "http://h:8080/a%20b"},
 		{name: "query marker escaped", baseURL: "http://h:8080", path: "/files/a?admin=true", want: "http://h:8080/files/a%3Fadmin=true"},
 		{name: "fragment escaped", baseURL: "http://h:8080", path: "/a#frag", want: "http://h:8080/a%23frag"},
@@ -127,7 +125,7 @@ func TestBuildDirectURL(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := buildDirectURL(tt.baseURL, tt.prefix, tt.path)
+			got, err := buildDirectURL(tt.baseURL, tt.path)
 			if err != nil {
 				t.Fatalf("buildDirectURL() error = %v", err)
 			}

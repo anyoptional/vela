@@ -88,7 +88,7 @@ func (r *Request) Do(ctx context.Context) (*Response, error) {
 
 	client := r.c
 	direct := client.target.Mode() == TargetDirect
-	resolvedPath, err := resolveServicePath(joinPath(client.target.Path, r.path), r.pathParams)
+	resolvedPath, err := resolveServicePath(r.path, r.pathParams)
 	if err != nil {
 		return nil, client.newFailure(KindInvalidCall, err)
 	}
@@ -160,7 +160,7 @@ func (r *Request) Do(ctx context.Context) (*Response, error) {
 			if retrySame {
 				targetURL = currentEndpoint
 			} else {
-				targetURL, err = buildDirectURL(client.target.URL, "", resolvedPath)
+				targetURL, err = buildDirectURL(client.target.URL, resolvedPath)
 				if err != nil {
 					return nil, client.newFailure(KindInvalidCall, fmt.Errorf("build direct URL: %w", err))
 				}

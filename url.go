@@ -44,13 +44,13 @@ func resolveServicePath(path string, pathParams map[string]string) (string, erro
 	return substitutePathParams(escaped, pathParams)
 }
 
-func buildDirectURL(baseURL, prefix, path string) (string, error) {
+func buildDirectURL(baseURL, path string) (string, error) {
 	base, err := url.Parse(baseURL)
 	if err != nil {
 		return "", err
 	}
 
-	rawPath, err := escapePath(joinPath(base.EscapedPath(), joinPath(prefix, path)))
+	rawPath, err := escapePath(joinPath(base.EscapedPath(), path))
 	if err != nil {
 		return "", err
 	}

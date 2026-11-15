@@ -28,6 +28,7 @@ type UpdateStatusReq {
 
 @server (
 	prefix: /api/v1
+	url: "http://orders.test"
 )
 service order-api {
 	@handler GetOrder

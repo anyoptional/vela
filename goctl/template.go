@@ -41,12 +41,20 @@ type {{.ClientConfigType}} struct {
 	Availability    func(*jinx.Failure) bool
 }
 
+// defaultTarget is derived from the api file: the service block name is the
+// service ID and the @server url annotation selects direct mode.
+var defaultTarget = jinx.Target{Name: {{quote .TargetName}}{{if .TargetURL}}, URL: {{quote .TargetURL}}{{end}}}
+
 func {{.Constructor}}(config {{.ClientConfigType}}) ({{.ServiceType}}, error) {
 	if config.Fallback != nil && config.FallbackFactory != nil {
 		return nil, errors.New("jinx: fallback and fallback factory are mutually exclusive")
 	}
+	target := config.Target
+	if target.Name == "" {
+		target = defaultTarget
+	}
 	options := append([]jinx.Option{jinx.WithDiscovery(config.Discovery)}, config.ClientOptions...)
-	client, err := jinx.New(config.Target, options...)
+	client, err := jinx.New(target, options...)
 	if err != nil {
 		return nil, err
 	}

@@ -85,8 +85,6 @@ func TestDirectTarget_RejectsMalformedAndUnsupportedURLs(t *testing.T) {
 		{name: "unsupported scheme", target: Target{Name: "orders", URL: "ftp://example.com"}},
 		{name: "URL query", target: Target{Name: "orders", URL: "https://example.com/api?token=secret"}},
 		{name: "URL fragment", target: Target{Name: "orders", URL: "https://example.com/api#part"}},
-		{name: "prefix query", target: Target{Name: "orders", URL: "https://example.com", Path: "/v1?mode=all"}},
-		{name: "prefix fragment", target: Target{Name: "orders", URL: "https://example.com", Path: "/v1#part"}},
 	}
 
 	for _, tt := range tests {
@@ -106,7 +104,7 @@ func TestDirectTarget_RejectsMalformedAndUnsupportedURLs(t *testing.T) {
 	}
 }
 
-func TestDirectTarget_JoinsBasePrefixRoutePathAndEscapedParams(t *testing.T) {
+func TestDirectTarget_JoinsBaseRoutePathAndEscapedParams(t *testing.T) {
 	requestURI := ""
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestURI = r.RequestURI
@@ -117,7 +115,6 @@ func TestDirectTarget_JoinsBasePrefixRoutePathAndEscapedParams(t *testing.T) {
 	client, err := New(Target{
 		Name: "orders",
 		URL:  server.URL + "/base%20path",
-		Path: "/v1/",
 	})
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
@@ -130,7 +127,7 @@ func TestDirectTarget_JoinsBasePrefixRoutePathAndEscapedParams(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Do() error = %v", err)
 	}
-	if want := "/base%20path/v1/orders/a%2Fb?expand=line+items"; requestURI != want {
+	if want := "/base%20path/orders/a%2Fb?expand=line+items"; requestURI != want {
 		t.Errorf("request URI = %q, want %q", requestURI, want)
 	}
 }

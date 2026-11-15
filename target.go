@@ -10,7 +10,6 @@ import (
 type Target struct {
 	Name string
 	URL  string
-	Path string
 }
 
 // TargetMode describes how a Target resolves its endpoint.
@@ -35,12 +34,6 @@ func (t Target) Mode() TargetMode {
 func (t Target) Validate() error {
 	if strings.TrimSpace(t.Name) == "" {
 		return errors.New("jinx: target name is required")
-	}
-	if strings.ContainsAny(t.Path, "?#") {
-		return errors.New("jinx: target path must not contain query or fragment")
-	}
-	if _, err := url.PathUnescape(t.Path); err != nil {
-		return errors.New("jinx: target path has invalid escaping")
 	}
 	if t.URL == "" {
 		return nil

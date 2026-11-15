@@ -70,13 +70,13 @@
 - `URL` 为空时使用服务发现：`Name` 作为服务 ID，由 `WithDiscovery` 配置的 `DiscoveryClient` 解析实例，再由 `LoadBalancer` 选择实例。
 - `URL` 非空时使用直连：请求访问该绝对 `http` 或 `https` URL，跳过服务发现和负载均衡。`Name` 仍作为错误、指标和生成客户端使用的逻辑客户端标识。
 - URL 传输失败后不得静默切换到服务发现。
-- `Path` 是客户端级路径前缀，与 base URL 路径和 route path 合并。Query 参数属于请求参数，不属于 target URL。
+- 客户端级路径前缀由 api 文件的 `@server` 注解维护（生成层把 prefix 拼进各 route path）；core 的 `Target` 不设 Path 字段。Query 参数属于请求参数，不属于 target URL。
 - 缺少名称、URL 格式错误、scheme 不支持或路径配置无效，都必须在构造时、发起网络请求前报错（普通 `error`，不产生 `Failure`）。
 
 ### 构造
 
 ```go
-type Target struct { Name, URL, Path string }
+type Target struct { Name, URL string }
 
 func New(t Target, opts ...Option) (*Client, error) // 校验失败返回普通 error
 func WithDiscovery(DiscoveryClient) Option          // URL == "" 时必填；URL != "" 时忽略
@@ -222,6 +222,7 @@ func New${Service}Client(config ${Service}ClientConfig) (${Service}, error)
 - fallback 实现本身不会被递归包装进主客户端；其方法按原参数直接调用。
 - fallback 方法自身失败：`errors.Join(原始 Failure, fmt.Errorf("jinx: fallback: %w", fbErr))`，两类错误均可分别检查，不设专用错误类型。
 - 插件同时生成 `types/<service>_api.go`（复用 goctl `gogen.BuildTypes`，输出与 `goctl api go` 一致）。第三方服务场景只声明如何调用，**不需要先运行 `goctl api go`**——其生成的 server 侧 routes/handler/logic 等代码没有用途。生成文件名为 `<service>_api.go`（service 块名蛇形小写），不同服务的 api 文件生成各自文件；`-dir` 可在模块子目录，types import 路径 = module path + 相对路径 + `/types`（向上查找最近 go.mod）。
+- **Target 元数据来自 api 文件**：`Target.Name` = service 块名（固定契约）；`@server` 注解可带 `url` key（如 `url: "http://orders.test"`），所有组的 url 必须一致、冲突生成期报错，非空即直连模式。生成代码内建 `defaultTarget`，`config.Target` 留作部署期覆盖（零值 Name → 用 api 文件派生的 Target）。
 - 生成方法接收单个请求结构体，字段按 goctl tag 分区：`path` → 路径参数（标量，与 route `:name` 一一对应）、`header` → 请求头（标量）、`form` → GET/DELETE/HEAD/OPTIONS 走 query、其余方法走 `application/x-www-form-urlencoded` body（标量；core 的 `SetFormParam` 与 `SetBody` 互斥）、`json` 或无 tag → JSON body（body 只含 json 字段）。同一请求类型混用 json 与 form 字段 → 生成期报错；json+path+header 混用允许。
 - types 放在**导出的** `types` 子包而非 `internal/types`：契约模块会被其他模块 import，Go 的 internal 规则禁止模块外导入 internal 包；消费方同时 import 契约模块（接口）与 `<module>/types`（请求/响应类型）。
 

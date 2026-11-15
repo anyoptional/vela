@@ -51,7 +51,6 @@ func getHealth(ctx context.Context, client *jinx.Client) error {
 client, err := jinx.New(jinx.Target{
 	Name: "orders",
 	URL:  "http://127.0.0.1:8080",
-	Path: "/api/v1",
 })
 if err != nil {
 	return err
@@ -60,7 +59,7 @@ if err != nil {
 _, err = client.NewRequest(http.MethodGet, "/health").Do(ctx)
 ```
 
-`Target.Path` 会与 base URL 路径和 route path 合并；path 参数由请求构造器编码。目标 URL 不接受 query 或 fragment，查询参数应使用请求构造器设置。直连请求不调用 discovery/load balancer；传输失败后不会切换到服务发现，但可按尝试策略重试同一 URL。
+base URL 路径与 route path 合并；path 参数由请求构造器编码。目标 URL 不接受 query 或 fragment，查询参数应使用请求构造器设置。直连请求不调用 discovery/load balancer；传输失败后不会切换到服务发现，但可按尝试策略重试同一 URL。
 
 ### 请求与故障
 

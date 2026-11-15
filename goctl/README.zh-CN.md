@@ -23,7 +23,7 @@ goctl api plugin --plugin goctl-jinx -api order.api -dir .
 
 目标目录不必在模块根：生成器从 `-dir` 向上查找最近的 `go.mod`，types 的 import 路径 = module path + 相对路径 + `/types`（如 `-dir` 为 `<root>/api/orders` 时导入 `example.com/svc/api/orders/types`）。如果目录中已有非测试 Go 文件，生成文件使用这些文件的 package 名；否则默认使用 `client`。
 
-service 块名会原样作为逻辑服务 ID，每个 `@handler` 会生成一个方法。生成的每个方法接收一个请求结构体，字段按 goctl tag 分区：
+service 块名会原样作为逻辑服务 ID，`Target.Name` 取它、生成代码内建 `defaultTarget`（`config.Target` 留作部署期覆盖，零值 Name 时用派生值）。`@server` 注解可带 `url` key（`url: "http://orders.test"`，值需引号）：所有组的 url 必须一致、冲突生成期报错，非空即直连模式。每个 `@handler` 会生成一个方法。生成的每个方法接收一个请求结构体，字段按 goctl tag 分区：
 
 - `path:"name"` → 路径参数（`SetPathParam`），字段必须是标量，且与 route 中的 `:name` 一一对应
 - `header:"name"` → 请求头（`SetHeader`），字段必须是标量
