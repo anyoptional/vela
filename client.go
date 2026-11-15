@@ -1,6 +1,7 @@
 package jinx
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
 	"time"
@@ -13,6 +14,7 @@ const (
 )
 
 type config struct {
+	discovery         DiscoveryClient
 	lb                LoadBalancer
 	perAttemptTimeout time.Duration
 	maxAttempts       int
@@ -26,6 +28,7 @@ type Option func(*config)
 
 // Client sends requests to discovered service instances.
 type Client struct {
+	target     Target
 	discovery  DiscoveryClient
 	lb         LoadBalancer
 	cfg        config
@@ -35,8 +38,12 @@ type Client struct {
 	transport  transport
 }
 
-// New constructs a Client with the supplied discovery source and options.
-func New(discovery DiscoveryClient, opts ...Option) *Client {
+// New constructs a Client for the supplied target and options.
+func New(target Target, opts ...Option) (*Client, error) {
+	if err := target.Validate(); err != nil {
+		return nil, err
+	}
+
 	cfg := config{
 		lb:                newRoundRobin(),
 		perAttemptTimeout: defaultPerAttemptTimeout,
@@ -49,6 +56,13 @@ func New(discovery DiscoveryClient, opts ...Option) *Client {
 		if opt != nil {
 			opt(&cfg)
 		}
+	}
+
+	if target.Mode() == TargetService && cfg.discovery == nil {
+		return nil, errors.New("jinx: service target requires a discovery client")
+	}
+	if target.Mode() == TargetDirect {
+		cfg.discovery = nil
 	}
 
 	if cfg.lb == nil {
@@ -73,13 +87,21 @@ func New(discovery DiscoveryClient, opts ...Option) *Client {
 	}
 
 	return &Client{
-		discovery:  discovery,
+		target:     target,
+		discovery:  cfg.discovery,
 		lb:         cfg.lb,
 		cfg:        cfg,
 		httpClient: cfg.httpClient,
 		logger:     cfg.logger,
 		cool:       newCooldownTracker(cfg.cooldown),
 		transport:  newRestyTransport(cfg, cfg.logger),
+	}, nil
+}
+
+// WithDiscovery sets the service discovery source.
+func WithDiscovery(discovery DiscoveryClient) Option {
+	return func(cfg *config) {
+		cfg.discovery = discovery
 	}
 }
 
@@ -125,12 +147,11 @@ func WithHTTPClient(c *http.Client) Option {
 	}
 }
 
-// NewRequest creates a request builder for the given service and route.
-func (c *Client) NewRequest(serviceID, method, path string) *Request {
+// NewRequest creates a request builder for the configured target and route.
+func (c *Client) NewRequest(method, path string) *Request {
 	return &Request{
-		serviceID: serviceID,
-		method:    method,
-		path:      path,
-		c:         c,
+		method: method,
+		path:   path,
+		c:      c,
 	}
 }

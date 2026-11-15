@@ -12,7 +12,6 @@ import (
 
 // Request builds and executes a request to a service instance.
 type Request struct {
-	serviceID  string
 	method     string
 	path       string
 	pathParams map[string]string
@@ -67,21 +66,27 @@ func (r *Request) Do(ctx context.Context) (*Response, error) {
 	if r == nil || r.c == nil {
 		return nil, errors.New("jinx: request has no client")
 	}
-	if r.c.discovery == nil {
+	direct := r.c.target.Mode() == TargetDirect
+	if !direct && r.c.discovery == nil {
 		return nil, errors.New("jinx: discovery client is nil")
 	}
 
-	resolvedPath, err := substitutePathParams(r.path, r.pathParams)
+	resolvedPath, err := substitutePathParams(joinPath(r.c.target.Path, r.path), r.pathParams)
 	if err != nil {
 		return nil, err
 	}
 
-	instances, err := r.c.discovery.Instances(ctx, r.serviceID)
-	if err != nil {
-		return nil, fmt.Errorf("jinx: discover %q: %w", r.serviceID, err)
-	}
-	if len(instances) == 0 {
-		return nil, ErrNoInstances
+	var instances []Instance
+	if direct {
+		instances = []Instance{{ID: r.c.target.Name}}
+	} else {
+		instances, err = r.c.discovery.Instances(ctx, r.c.target.Name)
+		if err != nil {
+			return nil, fmt.Errorf("jinx: discover %q: %w", r.c.target.Name, err)
+		}
+		if len(instances) == 0 {
+			return nil, ErrNoInstances
+		}
 	}
 
 	var body []byte
@@ -110,7 +115,7 @@ func (r *Request) Do(ctx context.Context) (*Response, error) {
 				continue
 			}
 			candidates = append(candidates, instance)
-			if !r.c.cool.isCooling(instance) {
+			if direct || !r.c.cool.isCooling(instance) {
 				available = append(available, instance)
 			}
 		}
@@ -121,11 +126,20 @@ func (r *Request) Do(ctx context.Context) (*Response, error) {
 			break
 		}
 
-		instance, err := r.c.lb.Choose(ctx, r.serviceID, candidates)
-		if err != nil {
-			return nil, fmt.Errorf("jinx: choose instance: %w", err)
+		instance := candidates[0]
+		var targetURL string
+		if direct {
+			targetURL, err = buildDirectURL(r.c.target.URL, "", resolvedPath)
+			if err != nil {
+				return nil, fmt.Errorf("jinx: build direct URL: %w", err)
+			}
+		} else {
+			instance, err = r.c.lb.Choose(ctx, r.c.target.Name, candidates)
+			if err != nil {
+				return nil, fmt.Errorf("jinx: choose instance: %w", err)
+			}
+			targetURL = buildURLFromPath(instance, resolvedPath)
 		}
-		targetURL := buildURLFromPath(instance, resolvedPath)
 
 		var bodyReader io.Reader
 		if r.body != nil {
@@ -148,7 +162,9 @@ func (r *Request) Do(ctx context.Context) (*Response, error) {
 		httpResponse, err := r.c.transport(ctx, httpRequest)
 		tried[keyFor(instance)] = struct{}{}
 		if err != nil {
-			r.c.cool.mark(instance)
+			if !direct {
+				r.c.cool.mark(instance)
+			}
 			lastTransportErr = err
 			lastStatusErr = nil
 			continue
@@ -161,7 +177,9 @@ func (r *Request) Do(ctx context.Context) (*Response, error) {
 
 		responseBody, readErr := readResponseBody(httpResponse)
 		if readErr != nil {
-			r.c.cool.mark(instance)
+			if !direct {
+				r.c.cool.mark(instance)
+			}
 			lastTransportErr = fmt.Errorf("read response body: %w", readErr)
 			lastStatusErr = nil
 			continue

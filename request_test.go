@@ -7,8 +7,11 @@ import (
 )
 
 func TestRequest_Setters(t *testing.T) {
-	client := New(nil)
-	request := client.NewRequest("orders", http.MethodPost, "/orders/:id")
+	client, err := New(Target{Name: "orders"}, WithDiscovery(fakeDiscovery{}))
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	request := client.NewRequest(http.MethodPost, "/orders/:id")
 	body := map[string]string{"name": "desk"}
 	result := new(struct{})
 
@@ -43,7 +46,7 @@ func TestRequest_Setters(t *testing.T) {
 	if request.result != result {
 		t.Errorf("result = %#v, want %#v", request.result, result)
 	}
-	if request.serviceID != "orders" || request.method != http.MethodPost || request.path != "/orders/:id" || request.c != client {
+	if request.method != http.MethodPost || request.path != "/orders/:id" || request.c != client {
 		t.Errorf("request identity fields = %#v", request)
 	}
 }

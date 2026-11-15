@@ -32,7 +32,6 @@ type clientTemplateData struct {
 
 type routeTemplateData struct {
 	Name         string
-	ServiceID    string
 	Method       string
 	Path         string
 	PathParams   []pathParamTemplateData
@@ -77,7 +76,7 @@ func gen(api *spec.ApiSpec, dir string) error {
 	for _, group := range api.Service.Groups {
 		prefix := group.Annotation.Properties[spec.RoutePrefixKey]
 		for _, route := range group.Routes {
-			generated, err := generateRoute(api.Service.Name, prefix, route)
+			generated, err := generateRoute(prefix, route)
 			if err != nil {
 				return err
 			}
@@ -111,7 +110,7 @@ func gen(api *spec.ApiSpec, dir string) error {
 	return nil
 }
 
-func generateRoute(serviceID, prefix string, route spec.Route) (routeTemplateData, error) {
+func generateRoute(prefix string, route spec.Route) (routeTemplateData, error) {
 	methodName := toCamel(route.Handler)
 	if !token.IsIdentifier(methodName) {
 		return routeTemplateData{}, fmt.Errorf("jinx-goctl: invalid handler name %q", route.Handler)
@@ -129,10 +128,9 @@ func generateRoute(serviceID, prefix string, route spec.Route) (routeTemplateDat
 	}
 
 	generated := routeTemplateData{
-		Name:      methodName,
-		ServiceID: serviceID,
-		Method:    method,
-		Path:      path.Join(prefix, route.Path),
+		Name:   methodName,
+		Method: method,
+		Path:   path.Join(prefix, route.Path),
 	}
 	if route.RequestType != nil {
 		generated.RequestType = route.RequestType.Name()
