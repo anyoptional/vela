@@ -1,6 +1,8 @@
 # jinx-goctl
 
-`jinx-goctl` 是 goctl API 插件，用于生成强类型服务接口、jinx 客户端配置和 fallback 分派代码。插件会在指定目录生成 `client.go` 和 `internal/types/types.go`。
+`jinx-goctl` 是 goctl API 插件，用于生成强类型服务接口、jinx 客户端配置和 fallback 分派代码。插件会在指定目录生成 `client.go` 和 `types/types.go`。
+
+预期用法：在**独立的契约模块**里维护 api 文件并生成代码，需要调用的模块 import 契约模块即可。types 是导出的 `types` 子包（不是 `internal/`）——否则消费模块无法 import 请求/响应类型。
 
 服务由第三方实现时只需要声明如何调用：**不要运行 `goctl api go`**，它会生成 server 侧 routes/handler/logic 等不需要的代码。插件自包含，一条命令即可：
 
@@ -19,9 +21,9 @@ go build -o goctl-jinx .
 goctl api plugin --plugin goctl-jinx -api order.api -dir .
 ```
 
-目标目录必须包含模块的 `go.mod`；生成器会使用其中的 module path 导入 `internal/types`。如果目录中已有非测试 Go 文件，生成文件使用这些文件的 package 名；否则默认使用 `client`。
+目标目录必须包含模块的 `go.mod`；生成器会使用其中的 module path 导入 `<module>/types`。如果目录中已有非测试 Go 文件，生成文件使用这些文件的 package 名；否则默认使用 `client`。
 
-service 块名会原样作为逻辑服务 ID，每个 `@handler` 会生成一个方法。path 参数根据对应 `path` tag 中声明的类型成为位置参数。请求和响应类型由插件生成在 `internal/types`（复用 goctl 的类型生成器，输出与 `goctl api go` 一致）；GET 和 DELETE 方法不会发送请求体。暂不支持 form/query 参数，遇到时会明确返回错误。
+service 块名会原样作为逻辑服务 ID，每个 `@handler` 会生成一个方法。path 参数根据对应 `path` tag 中声明的类型成为位置参数。请求和响应类型由插件生成在 `types` 子包（复用 goctl 的类型生成器，输出与 `goctl api go` 一致）；GET 和 DELETE 方法不会发送请求体。暂不支持 form/query 参数，遇到时会明确返回错误。
 
 ## 构造生成客户端
 

@@ -114,12 +114,14 @@ func gen(api *spec.ApiSpec, dir string) error {
 	return nil
 }
 
-// writeTypesFile generates internal/types/types.go from the API spec's type
+// writeTypesFile generates types/types.go from the API spec's type
 // declarations, reusing goctl's own type generator so the output matches
-// goctl conventions exactly. The plugin is self-contained: callers do not
-// need to run "goctl api go" first.
+// goctl conventions exactly. The types subpackage is exported (not
+// internal/): contract modules are imported by other modules, and Go's
+// internal rule would forbid importing internal/types from outside.
+// The plugin is self-contained: callers do not need to run "goctl api go".
 func writeTypesFile(api *spec.ApiSpec, dir string) error {
-	typesDir := filepath.Join(dir, "internal", "types")
+	typesDir := filepath.Join(dir, "types")
 	if err := os.MkdirAll(typesDir, 0o755); err != nil {
 		return fmt.Errorf("jinx-goctl: create types directory: %w", err)
 	}
@@ -266,7 +268,7 @@ func deriveTypesPkg(dir string) (string, error) {
 		}
 		modulePath := strings.Trim(fields[1], `"`)
 		if modulePath != "" {
-			return path.Join(modulePath, "internal/types"), nil
+			return path.Join(modulePath, "types"), nil
 		}
 		break
 	}

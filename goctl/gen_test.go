@@ -110,8 +110,8 @@ func TestDeriveTypesPkg(t *testing.T) {
 		if err != nil {
 			t.Fatalf("deriveTypesPkg(): %v", err)
 		}
-		if got != "example.com/svc/internal/types" {
-			t.Errorf("deriveTypesPkg() = %q, want example.com/svc/internal/types", got)
+		if got != "example.com/svc/types" {
+			t.Errorf("deriveTypesPkg() = %q, want example.com/svc/types", got)
 		}
 	})
 
@@ -124,8 +124,8 @@ func TestDeriveTypesPkg(t *testing.T) {
 		if err != nil {
 			t.Fatalf("deriveTypesPkg(): %v", err)
 		}
-		if got != "example.com/svc/internal/types" {
-			t.Errorf("deriveTypesPkg() = %q, want example.com/svc/internal/types", got)
+		if got != "example.com/svc/types" {
+			t.Errorf("deriveTypesPkg() = %q, want example.com/svc/types", got)
 		}
 	})
 
@@ -175,7 +175,7 @@ func prepareGeneratedClientModule(t *testing.T) string {
 	if err := gen(api, dir); err != nil {
 		t.Fatalf("gen(): %v", err)
 	}
-	typesSource, err := os.ReadFile(filepath.Join(dir, "internal", "types", "types.go"))
+	typesSource, err := os.ReadFile(filepath.Join(dir, "types", "types.go"))
 	if err != nil {
 		t.Fatalf("ReadFile(types.go): %v", err)
 	}
@@ -198,7 +198,7 @@ import (
 	"testing"
 	"time"
 
-	types "example.com/svc/internal/types"
+	types "example.com/svc/types"
 	"github.com/anyoptional/jinx"
 )
 

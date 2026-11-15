@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"net/http"
 
-	types "example.com/svc/internal/types"
+	types "example.com/svc/types"
 	"github.com/anyoptional/jinx"
 )
 

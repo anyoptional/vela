@@ -221,7 +221,8 @@ func New${Service}Client(config ${Service}ClientConfig) (${Service}, error)
 - `FallbackFactory` 接收 `*Failure` 与 `*Response`（传输失败时 `Response` 为 nil）；一次给全，日后不破坏签名。
 - fallback 实现本身不会被递归包装进主客户端；其方法按原参数直接调用。
 - fallback 方法自身失败：`errors.Join(原始 Failure, fmt.Errorf("jinx: fallback: %w", fbErr))`，两类错误均可分别检查，不设专用错误类型。
-- 插件同时生成 `internal/types/types.go`（复用 goctl `gogen.BuildTypes`，输出与 `goctl api go` 一致）。第三方服务场景只声明如何调用，**不需要先运行 `goctl api go`**——其生成的 server 侧 routes/handler/logic 等代码没有用途。
+- 插件同时生成 `types/types.go`（复用 goctl `gogen.BuildTypes`，输出与 `goctl api go` 一致）。第三方服务场景只声明如何调用，**不需要先运行 `goctl api go`**——其生成的 server 侧 routes/handler/logic 等代码没有用途。
+- types 放在**导出的** `types` 子包而非 `internal/types`：契约模块会被其他模块 import，Go 的 internal 规则禁止模块外导入 internal 包；消费方同时 import 契约模块（接口）与 `<module>/types`（请求/响应类型）。
 
 ## 请求与响应行为
 
