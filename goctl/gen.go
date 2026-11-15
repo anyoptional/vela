@@ -67,6 +67,10 @@ func gen(api *spec.ApiSpec, dir, style string) error {
 	if api.Service.Name == "" {
 		return errors.New("vela-goctl: service name is empty")
 	}
+	// goctl names the camel style "goZero" (capital Z) in FileNamingFormat;
+	// users pass "gozero" per go-zero config conventions. Normalize before
+	// formatting, otherwise "gozero" degrades to all-lowercase output.
+	style = strings.ReplaceAll(style, "gozero", "goZero")
 	fileBase, err := namingformat.FileNamingFormat(cmp.Or(style, "go_zero"), strings.ReplaceAll(api.Service.Name, "-", "_"))
 	if err != nil {
 		return fmt.Errorf("vela-goctl: file naming style %q: %w", style, err)

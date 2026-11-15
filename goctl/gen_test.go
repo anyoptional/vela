@@ -127,11 +127,26 @@ func TestGenerate_GozeroStyle(t *testing.T) {
 	if err := gen(api, dir, "gozero"); err != nil {
 		t.Fatalf("gen(): %v", err)
 	}
-	for _, file := range []string{"orderApi.go", filepath.Join("types", "orderApi.go")} {
-		if _, err := os.Stat(filepath.Join(dir, file)); err != nil {
-			t.Errorf("expected %s: %v", file, err)
+	// Assert on real directory entries, not os.Stat: on case-insensitive
+	// filesystems os.Stat masks a wrong-cased generated name.
+	checkEntries := func(path string, want ...string) {
+		t.Helper()
+		entries, err := os.ReadDir(path)
+		if err != nil {
+			t.Fatalf("ReadDir(%s): %v", path, err)
+		}
+		got := make(map[string]bool, len(entries))
+		for _, entry := range entries {
+			got[entry.Name()] = true
+		}
+		for _, name := range want {
+			if !got[name] {
+				t.Errorf("expected %s in %s, entries = %v", name, path, got)
+			}
 		}
 	}
+	checkEntries(dir, "orderApi.go")
+	checkEntries(filepath.Join(dir, "types"), "orderApi.go")
 }
 
 func TestDeriveTypesPkg(t *testing.T) {

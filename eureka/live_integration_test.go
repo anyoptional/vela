@@ -11,9 +11,9 @@ import (
 )
 
 func TestLive(t *testing.T) {
-	serverURL := os.Getenv("vela_EUREKA_URL")
+	serverURL := os.Getenv("VELA_EUREKA_URL")
 	if serverURL == "" {
-		t.Skip("vela_EUREKA_URL is not set")
+		t.Skip("VELA_EUREKA_URL is not set")
 	}
 
 	id := fmt.Sprintf("%d-%d", os.Getpid(), time.Now().UnixNano())
