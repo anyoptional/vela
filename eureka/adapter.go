@@ -9,7 +9,7 @@ import (
 	"slices"
 
 	eureka "github.com/anyoptional/eureka-go"
-	"github.com/anyoptional/jinx"
+	"github.com/anyoptional/vela"
 	"github.com/go-logr/logr"
 )
 
@@ -17,8 +17,8 @@ type adapter struct {
 	client *eureka.Client
 }
 
-// New adapts an eureka-go client to jinx service discovery.
-func New(client *eureka.Client) jinx.DiscoveryClient {
+// New adapts an eureka-go client to vela service discovery.
+func New(client *eureka.Client) vela.DiscoveryClient {
 	if client != nil {
 		client.SetLogger(newSlogLogr(slog.Default()))
 	}
@@ -34,21 +34,21 @@ func (a *adapter) Services(ctx context.Context) ([]string, error) {
 		return nil, err
 	}
 	if a.client == nil {
-		return nil, errors.New("jinx-eureka: client is nil")
+		return nil, errors.New("vela-eureka: client is nil")
 	}
 	return slices.Sorted(maps.Keys(a.client.Apps())), nil
 }
 
-func (a *adapter) Instances(ctx context.Context, serviceID string) ([]jinx.Instance, error) {
+func (a *adapter) Instances(ctx context.Context, serviceID string) ([]vela.Instance, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	if a.client == nil {
-		return nil, errors.New("jinx-eureka: client is nil")
+		return nil, errors.New("vela-eureka: client is nil")
 	}
 
 	discovered := a.client.InstancesOf(serviceID, eureka.WithStatus(eureka.UP))
-	instances := make([]jinx.Instance, 0, len(discovered))
+	instances := make([]vela.Instance, 0, len(discovered))
 	for _, discoveredInstance := range discovered {
 		if instance, ok := mapInstance(discoveredInstance, serviceID); ok {
 			instances = append(instances, instance)
@@ -57,9 +57,9 @@ func (a *adapter) Instances(ctx context.Context, serviceID string) ([]jinx.Insta
 	return instances, nil
 }
 
-func mapInstance(in *eureka.Instance, serviceID string) (jinx.Instance, bool) {
+func mapInstance(in *eureka.Instance, serviceID string) (vela.Instance, bool) {
 	if in == nil || (!in.Port.Enabled && !in.SecurePort.Enabled) {
-		return jinx.Instance{}, false
+		return vela.Instance{}, false
 	}
 
 	host := in.IPAddr
@@ -79,7 +79,7 @@ func mapInstance(in *eureka.Instance, serviceID string) (jinx.Instance, bool) {
 		}
 	}
 
-	return jinx.Instance{
+	return vela.Instance{
 		ID:        in.Id(),
 		ServiceID: serviceID,
 		Host:      host,
@@ -143,4 +143,4 @@ func (s *slogSink) logValues(keysAndValues []any) []any {
 	return append(values, keysAndValues...)
 }
 
-var _ jinx.DiscoveryClient = (*adapter)(nil)
+var _ vela.DiscoveryClient = (*adapter)(nil)

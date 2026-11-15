@@ -1,4 +1,4 @@
-package jinx
+package vela
 
 import (
 	"errors"
@@ -61,7 +61,7 @@ func New(target Target, opts ...Option) (*Client, error) {
 	}
 
 	if target.Mode() == TargetService && cfg.discovery == nil {
-		return nil, errors.New("jinx: service target requires a discovery client")
+		return nil, errors.New("vela: service target requires a discovery client")
 	}
 	if target.Mode() == TargetDirect {
 		cfg.discovery = nil

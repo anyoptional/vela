@@ -62,22 +62,22 @@ type bodyField struct {
 
 func gen(api *spec.ApiSpec, dir, style string) error {
 	if api == nil {
-		return errors.New("jinx-goctl: API spec is nil")
+		return errors.New("vela-goctl: API spec is nil")
 	}
 	if api.Service.Name == "" {
-		return errors.New("jinx-goctl: service name is empty")
+		return errors.New("vela-goctl: service name is empty")
 	}
 	fileBase, err := namingformat.FileNamingFormat(cmp.Or(style, "go_zero"), strings.ReplaceAll(api.Service.Name, "-", "_"))
 	if err != nil {
-		return fmt.Errorf("jinx-goctl: file naming style %q: %w", style, err)
+		return fmt.Errorf("vela-goctl: file naming style %q: %w", style, err)
 	}
 	if fileBase == "" || fileBase == "." || fileBase == ".." || strings.ContainsAny(fileBase, `/\`) {
-		return fmt.Errorf("jinx-goctl: invalid file base name %q for service %q", fileBase, api.Service.Name)
+		return fmt.Errorf("vela-goctl: invalid file base name %q for service %q", fileBase, api.Service.Name)
 	}
 
 	serviceType := toCamel(api.Service.Name)
 	if !token.IsIdentifier(serviceType) {
-		return fmt.Errorf("jinx-goctl: invalid service name %q", api.Service.Name)
+		return fmt.Errorf("vela-goctl: invalid service name %q", api.Service.Name)
 	}
 	packageName, err := directoryPackage(dir)
 	if err != nil {
@@ -93,14 +93,14 @@ func gen(api *spec.ApiSpec, dir, style string) error {
 		FileBase:         fileBase,
 	}
 	if !token.IsIdentifier(data.ClientType) || !token.IsIdentifier(data.ClientConfigType) || !token.IsIdentifier(data.Constructor) {
-		return fmt.Errorf("jinx-goctl: invalid generated client name for service %q", api.Service.Name)
+		return fmt.Errorf("vela-goctl: invalid generated client name for service %q", api.Service.Name)
 	}
 
 	targetURL := ""
 	for _, group := range api.Service.Groups {
 		if url := group.Annotation.Properties["url"]; url != "" {
 			if targetURL != "" && targetURL != url {
-				return fmt.Errorf("jinx-goctl: conflicting url annotations: %q vs %q", targetURL, url)
+				return fmt.Errorf("vela-goctl: conflicting url annotations: %q vs %q", targetURL, url)
 			}
 			targetURL = url
 		}
@@ -117,7 +117,7 @@ func gen(api *spec.ApiSpec, dir, style string) error {
 	data.TargetName = api.Service.Name
 	data.TargetURL = targetURL
 	if len(data.Routes) == 0 {
-		return errors.New("jinx-goctl: service has no routes")
+		return errors.New("vela-goctl: service has no routes")
 	}
 	if data.HasTypes {
 		typesPackage, err := deriveTypesPkg(dir)
@@ -132,15 +132,15 @@ func gen(api *spec.ApiSpec, dir, style string) error {
 
 	var source bytes.Buffer
 	if err := executeClientTemplate(&source, data); err != nil {
-		return fmt.Errorf("jinx-goctl: render client: %w", err)
+		return fmt.Errorf("vela-goctl: render client: %w", err)
 	}
 	formatted, err := format.Source(source.Bytes())
 	if err != nil {
-		return fmt.Errorf("jinx-goctl: format generated client: %w", err)
+		return fmt.Errorf("vela-goctl: format generated client: %w", err)
 	}
 	clientFile := filepath.Join(dir, data.FileBase+".go")
 	if err := os.WriteFile(clientFile, formatted, 0o644); err != nil {
-		return fmt.Errorf("jinx-goctl: write %s: %w", clientFile, err)
+		return fmt.Errorf("vela-goctl: write %s: %w", clientFile, err)
 	}
 	return nil
 }
@@ -154,19 +154,19 @@ func gen(api *spec.ApiSpec, dir, style string) error {
 func writeTypesFile(api *spec.ApiSpec, dir, fileBase string) error {
 	typesDir := filepath.Join(dir, "types")
 	if err := os.MkdirAll(typesDir, 0o755); err != nil {
-		return fmt.Errorf("jinx-goctl: create types directory: %w", err)
+		return fmt.Errorf("vela-goctl: create types directory: %w", err)
 	}
 	declarations, err := gogen.BuildTypes(api.Types)
 	if err != nil {
-		return fmt.Errorf("jinx-goctl: build types: %w", err)
+		return fmt.Errorf("vela-goctl: build types: %w", err)
 	}
 	formatted, err := format.Source([]byte("package types\n\n" + declarations))
 	if err != nil {
-		return fmt.Errorf("jinx-goctl: format generated types: %w", err)
+		return fmt.Errorf("vela-goctl: format generated types: %w", err)
 	}
 	typesFile := filepath.Join(typesDir, fileBase+".go")
 	if err := os.WriteFile(typesFile, formatted, 0o644); err != nil {
-		return fmt.Errorf("jinx-goctl: write %s: %w", typesFile, err)
+		return fmt.Errorf("vela-goctl: write %s: %w", typesFile, err)
 	}
 	return nil
 }
@@ -174,12 +174,12 @@ func writeTypesFile(api *spec.ApiSpec, dir, fileBase string) error {
 func generateRoute(prefix string, route spec.Route) (routeTemplateData, error) {
 	methodName := toCamel(route.Handler)
 	if !token.IsIdentifier(methodName) {
-		return routeTemplateData{}, fmt.Errorf("jinx-goctl: invalid handler name %q", route.Handler)
+		return routeTemplateData{}, fmt.Errorf("vela-goctl: invalid handler name %q", route.Handler)
 	}
 
 	method, ok := httpMethods[strings.ToUpper(route.Method)]
 	if !ok {
-		return routeTemplateData{}, fmt.Errorf("jinx-goctl: unsupported HTTP method %q", route.Method)
+		return routeTemplateData{}, fmt.Errorf("vela-goctl: unsupported HTTP method %q", route.Method)
 	}
 
 	generated := routeTemplateData{
@@ -195,7 +195,7 @@ func generateRoute(prefix string, route spec.Route) (routeTemplateData, error) {
 	if route.RequestType != nil {
 		generated.RequestType = route.RequestType.Name()
 		if !token.IsIdentifier(generated.RequestType) {
-			return routeTemplateData{}, fmt.Errorf("jinx-goctl: unsupported request type %q", generated.RequestType)
+			return routeTemplateData{}, fmt.Errorf("vela-goctl: unsupported request type %q", generated.RequestType)
 		}
 		if err := generated.classifyRequestFields(route.Path, route.RequestType); err != nil {
 			return routeTemplateData{}, err
@@ -204,7 +204,7 @@ func generateRoute(prefix string, route spec.Route) (routeTemplateData, error) {
 	if route.ResponseType != nil {
 		generated.ResponseType = route.ResponseType.Name()
 		if !token.IsIdentifier(generated.ResponseType) {
-			return routeTemplateData{}, fmt.Errorf("jinx-goctl: unsupported response type %q", generated.ResponseType)
+			return routeTemplateData{}, fmt.Errorf("vela-goctl: unsupported response type %q", generated.ResponseType)
 		}
 	}
 	return generated, nil
@@ -227,28 +227,28 @@ func (generated *routeTemplateData) classifyRequestFields(routePath string, requ
 	for _, member := range structMembers(requestType) {
 		tags, err := spec.Parse(member.Tag)
 		if err != nil {
-			return fmt.Errorf("jinx-goctl: parse tags for request field %q: %w", member.Name, err)
+			return fmt.Errorf("vela-goctl: parse tags for request field %q: %w", member.Name, err)
 		}
 		kind, name := memberTagKind(tags, member.Name)
 		switch kind {
 		case "path":
 			if !pathParamNames[name] {
-				return fmt.Errorf("jinx-goctl: request field %q has path tag %q not present in route %q", member.Name, name, routePath)
+				return fmt.Errorf("vela-goctl: request field %q has path tag %q not present in route %q", member.Name, name, routePath)
 			}
 			if !isScalarType(member.Type) {
-				return fmt.Errorf("jinx-goctl: path field %q must be a scalar type", member.Name)
+				return fmt.Errorf("vela-goctl: path field %q must be a scalar type", member.Name)
 			}
 			matchedPath[name] = true
 			generated.PathParams = append(generated.PathParams, taggedField{Name: name, Field: member.Name})
 		case "header":
 			if !isScalarType(member.Type) {
-				return fmt.Errorf("jinx-goctl: header field %q must be a scalar type", member.Name)
+				return fmt.Errorf("vela-goctl: header field %q must be a scalar type", member.Name)
 			}
 			generated.Headers = append(generated.Headers, taggedField{Name: name, Field: member.Name})
 		case "form":
 			formSeen = true
 			if !isScalarType(member.Type) {
-				return fmt.Errorf("jinx-goctl: form field %q must be a scalar type", member.Name)
+				return fmt.Errorf("vela-goctl: form field %q must be a scalar type", member.Name)
 			}
 			generated.FormParams = append(generated.FormParams, taggedField{Name: name, Field: member.Name})
 		default:
@@ -258,11 +258,11 @@ func (generated *routeTemplateData) classifyRequestFields(routePath string, requ
 	}
 
 	if jsonSeen && formSeen {
-		return fmt.Errorf("jinx-goctl: request type %q mixes json and form fields", requestType.Name())
+		return fmt.Errorf("vela-goctl: request type %q mixes json and form fields", requestType.Name())
 	}
 	for name := range pathParamNames {
 		if !matchedPath[name] {
-			return fmt.Errorf("jinx-goctl: cannot determine path field for path param %q", name)
+			return fmt.Errorf("vela-goctl: cannot determine path field for path param %q", name)
 		}
 	}
 	return nil
@@ -316,7 +316,7 @@ func structMembers(requestType spec.Type) []spec.Member {
 func deriveTypesPkg(dir string) (string, error) {
 	absDir, err := filepath.Abs(dir)
 	if err != nil {
-		return "", fmt.Errorf("jinx-goctl: resolve output directory %s: %w", dir, err)
+		return "", fmt.Errorf("vela-goctl: resolve output directory %s: %w", dir, err)
 	}
 	for current := absDir; ; current = filepath.Dir(current) {
 		content, err := os.ReadFile(filepath.Join(current, "go.mod"))
@@ -335,7 +335,7 @@ func deriveTypesPkg(dir string) (string, error) {
 			break
 		}
 	}
-	return "", fmt.Errorf("jinx-goctl: cannot derive types package from %s", dir)
+	return "", fmt.Errorf("vela-goctl: cannot derive types package from %s", dir)
 }
 
 func modulePathFrom(content []byte) string {
@@ -356,7 +356,7 @@ func modulePathFrom(content []byte) string {
 func directoryPackage(dir string) (string, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return "", fmt.Errorf("jinx-goctl: read output directory %s: %w", dir, err)
+		return "", fmt.Errorf("vela-goctl: read output directory %s: %w", dir, err)
 	}
 	var packageName string
 	for _, entry := range entries {
@@ -366,16 +366,16 @@ func directoryPackage(dir string) (string, error) {
 		}
 		file, err := goparser.ParseFile(token.NewFileSet(), filepath.Join(dir, name), nil, goparser.PackageClauseOnly)
 		if err != nil {
-			return "", fmt.Errorf("jinx-goctl: read package from %s: %w", name, err)
+			return "", fmt.Errorf("vela-goctl: read package from %s: %w", name, err)
 		}
 		if packageName != "" && file.Name.Name != packageName {
-			return "", fmt.Errorf("jinx-goctl: multiple Go packages in output directory %s", dir)
+			return "", fmt.Errorf("vela-goctl: multiple Go packages in output directory %s", dir)
 		}
 		packageName = file.Name.Name
 	}
 	packageName = cmp.Or(packageName, "client")
 	if !token.IsIdentifier(packageName) {
-		return "", fmt.Errorf("jinx-goctl: invalid package name %q", packageName)
+		return "", fmt.Errorf("vela-goctl: invalid package name %q", packageName)
 	}
 	return packageName, nil
 }

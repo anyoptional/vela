@@ -1,4 +1,4 @@
-package jinx
+package vela
 
 import (
 	"bytes"
@@ -46,7 +46,7 @@ func newRestyTransport(cfg config, logger *slog.Logger) Transport {
 	client := resty.NewWithClient(httpClient).
 		SetTimeout(cfg.perAttemptTimeout).
 		SetRetryCount(0).
-		SetHeader("User-Agent", "jinx").
+		SetHeader("User-Agent", "vela").
 		SetLogger(newRestySlogLogger(logger))
 
 	return func(ctx context.Context, req *http.Request) (*http.Response, error) {
@@ -137,7 +137,7 @@ func sanitizeTransportError(err error) error {
 		errType = errType.Elem()
 	}
 	if errType != nil && strings.HasPrefix(errType.PkgPath(), "resty.dev/v3") {
-		return errors.New("jinx: HTTP transport failed")
+		return errors.New("vela: HTTP transport failed")
 	}
 	return err
 }

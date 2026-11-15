@@ -1,6 +1,6 @@
-# jinx-eureka
+# vela-eureka
 
-`jinx-eureka` 将 [eureka-go](https://github.com/anyoptional/eureka-go) 服务发现适配到 [`jinx`](https://github.com/anyoptional/jinx) 负载均衡 HTTP 客户端。
+`vela-eureka` 将 [eureka-go](https://github.com/anyoptional/eureka-go) 服务发现适配到 [`vela`](https://github.com/anyoptional/vela) 负载均衡 HTTP 客户端。
 
 ## 用法
 
@@ -13,8 +13,8 @@ import (
 	"net/http"
 
 	eureka "github.com/anyoptional/eureka-go"
-	"github.com/anyoptional/jinx"
-	eurekaadapter "github.com/anyoptional/jinx-eureka"
+	"github.com/anyoptional/vela"
+	eurekaadapter "github.com/anyoptional/vela-eureka"
 )
 
 func main() {
@@ -48,12 +48,12 @@ func main() {
 		}
 	}()
 
-	client, err := jinx.New(
-		jinx.Target{Name: "ORDERS"},
-		jinx.WithDiscovery(eurekaadapter.New(eurekaClient)),
+	client, err := vela.New(
+		vela.Target{Name: "ORDERS"},
+		vela.WithDiscovery(eurekaadapter.New(eurekaClient)),
 	)
 	if err != nil {
-		slog.Error("创建 jinx 客户端", "error", err)
+		slog.Error("创建 vela 客户端", "error", err)
 		return
 	}
 	var health struct {
@@ -70,4 +70,4 @@ func main() {
 
 `Target.Name` 必须与 Eureka 应用名一致。适配器只返回状态为 `UP` 且至少有一个启用端口的实例；安全端口启用时优先使用安全端口，并将元数据值转换为字符串。Eureka 的 `logr` 日志会桥接到默认 `slog` logger。
 
-运行真实环境集成测试时，将 `JINX_EUREKA_URL` 设为可访问的 Eureka base URL，并在本模块执行 `go test ./... -run TestLive -v`。测试会注册一个临时实例，并在清理阶段注销。
+运行真实环境集成测试时，将 `vela_EUREKA_URL` 设为可访问的 Eureka base URL，并在本模块执行 `go test ./... -run TestLive -v`。测试会注册一个临时实例，并在清理阶段注销。

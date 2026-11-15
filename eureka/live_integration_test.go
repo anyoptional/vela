@@ -11,20 +11,20 @@ import (
 )
 
 func TestLive(t *testing.T) {
-	serverURL := os.Getenv("JINX_EUREKA_URL")
+	serverURL := os.Getenv("vela_EUREKA_URL")
 	if serverURL == "" {
-		t.Skip("JINX_EUREKA_URL is not set")
+		t.Skip("vela_EUREKA_URL is not set")
 	}
 
 	id := fmt.Sprintf("%d-%d", os.Getpid(), time.Now().UnixNano())
-	serviceID := "JINX-LIVE-" + id
+	serviceID := "vela-LIVE-" + id
 	cfg := eureka.DefaultConfig()
 	cfg.Client.Zones = []eureka.ZoneURLs{{Zone: "default", URLs: []string{serverURL}}}
 	cfg.Client.Zone = "default"
 	cfg.Client.PollInterval = time.Second
 	cfg.Instance.App = serviceID
 	cfg.Instance.InstanceId = id
-	cfg.Instance.HostName = "jinx-live.local"
+	cfg.Instance.HostName = "vela-live.local"
 	cfg.Instance.IPAddr = "127.0.0.1"
 	cfg.Instance.Port = 8080
 	cfg.Instance.Status = eureka.UP

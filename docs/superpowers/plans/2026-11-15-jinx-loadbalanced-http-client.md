@@ -1,14 +1,14 @@
-# jinx 负载均衡 HTTP 客户端 实现计划
+# vela 负载均衡 HTTP 客户端 实现计划
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 实现 jinx：基于 eureka-go 服务发现的负载均衡 HTTP 客户端库（core + eureka 适配器 + goctl 插件三模块），公开 API 按已审计的最小面。
+**Goal:** 实现 vela：基于 eureka-go 服务发现的负载均衡 HTTP 客户端库（core + eureka 适配器 + goctl 插件三模块），公开 API 按已审计的最小面。
 
-**Architecture:** Go workspace 三模块。core（`github.com/anyoptional/jinx`，根目录）持有 DiscoveryClient/LoadBalancer 接口、失败转移循环、冷却、resty 传输边界；eureka 适配器（`eureka/`，模块 `github.com/anyoptional/jinx-eureka`）实现 DiscoveryClient；goctl 插件（`goctl/`，模块 `github.com/anyoptional/jinx-goctl`）生成调 core 的 typed interface + 实现。
+**Architecture:** Go workspace 三模块。core（`github.com/anyoptional/vela`，根目录）持有 DiscoveryClient/LoadBalancer 接口、失败转移循环、冷却、resty 传输边界；eureka 适配器（`eureka/`，模块 `github.com/anyoptional/vela-eureka`）实现 DiscoveryClient；goctl 插件（`goctl/`，模块 `github.com/anyoptional/vela-goctl`）生成调 core 的 typed interface + 实现。
 
 **Tech Stack:** Go 1.25、`resty.dev/v3` v3.0.0-rc.4（仅 core 内部）、github.com/anyoptional/eureka-go v1.0.0（仅适配器）、github.com/zeromicro/go-zero tools/goctl（仅插件）、slog。
 
-**Spec:** `docs/superpowers/specs/2026-11-15-jinx-loadbalanced-http-client-design.md`
+**Spec:** `docs/superpowers/specs/2026-11-15-vela-loadbalanced-http-client-design.md`
 
 ## Global Constraints
 
@@ -16,7 +16,7 @@
 - **Modern Go**：编辑任何 .go 文件前运行 `sh "C:/Users/Archer/.claude/plugins/cache/goland-claude-marketplace/modern-go-guidelines/1.1.1/skills/use-modern-go/scripts/run-tool.sh" list --go-version 1.25`，遵守返回的全部适用指南（已知适用：`wg.Go`（如 spawn goroutine）、`t.Context()`、`omitzero`、`slices_*`/`maps_*`、`any`、`errors.Is`/`errors.Join`、`atomic_types`、`sync_once_func`、`cmp.Or`、`min`/`max`、`clear`、`range_over_int`）。
 - 依赖隔离（反目标）：resty 类型绝不进公开签名；eureka-go 只在 eureka 模块；go-zero/goctl 只在插件模块。core 公开面 = spec 审计后最小面（见下），一个都不多。
 - 语义契约：`Do` 收到任何 HTTP 响应（含 4xx/5xx）都返回非 nil Response，非 2xx 时 error 非 nil（状态码 + 有界 body 摘录）；4xx 不转移；5xx 转移不冷却；只有传输错误进冷却；全部候选冷却时照样尝试；同请求不重试同实例两次。
-- 测试：表驱动 + `-race`；live 集成测试环境变量门控（`JINX_EUREKA_URL`，缺省跳过），对照 eureka-go `live_integration_test.go` 模式。
+- 测试：表驱动 + `-race`；live 集成测试环境变量门控（`vela_EUREKA_URL`，缺省跳过），对照 eureka-go `live_integration_test.go` 模式。
 - 提交：Conventional Commits（`feat:`/`test:`/`docs:`），提交信息末尾附 `Co-Authored-By: Claude Code <noreply@anthropic.com>`。Task 0 完成 `git init` 后每个任务以提交收尾。
 - 文档：每个模块 README.md + README.zh-CN.md（对照 eureka-go 双语惯例）。
 
@@ -36,27 +36,27 @@
 - Create: `.gitignore`、`go.work`、`go.mod`（根）、`eureka/go.mod`、`goctl/go.mod`
 
 **Interfaces:**
-- Produces: 三个模块路径——`github.com/anyoptional/jinx`（根，package `jinx`）、`github.com/anyoptional/jinx-eureka`（`eureka/`，package `eurekaadapter`）、`github.com/anyoptional/jinx-goctl`（`goctl/`，package `main`，二进制名 `goctl-jinx`）
+- Produces: 三个模块路径——`github.com/anyoptional/vela`（根，package `vela`）、`github.com/anyoptional/vela-eureka`（`eureka/`，package `eurekaadapter`）、`github.com/anyoptional/vela-goctl`（`goctl/`，package `main`，二进制名 `goctl-vela`）
 
 - [ ] **Step 1: git init + .gitignore**
 
 ```bash
-cd D:/Codes/WorkspaceGo/jinx && git init
+cd D:/Codes/WorkspaceGo/vela && git init
 ```
 
 `.gitignore` 内容：`bin/`、`*.exe`、`*.test`、`*.out`。
 
 - [ ] **Step 2: 根 go.mod**
 
-`module github.com/anyoptional/jinx`，`go 1.25`，`require resty.dev/v3 v3.0.0-rc.4`（首次 import 发生在 Task 5，届时 `go mod tidy` 固化；本任务只写 require，不在本任务跑 tidy）。
+`module github.com/anyoptional/vela`，`go 1.25`，`require resty.dev/v3 v3.0.0-rc.4`（首次 import 发生在 Task 5，届时 `go mod tidy` 固化；本任务只写 require，不在本任务跑 tidy）。
 
 - [ ] **Step 3: eureka/go.mod**
 
-`module github.com/anyoptional/jinx-eureka`，`go 1.25`，`require github.com/anyoptional/eureka-go v1.0.0` + `github.com/anyoptional/jinx v0.0.0`（go.work 自动解析，不加 replace）。
+`module github.com/anyoptional/vela-eureka`，`go 1.25`，`require github.com/anyoptional/eureka-go v1.0.0` + `github.com/anyoptional/vela v0.0.0`（go.work 自动解析，不加 replace）。
 
 - [ ] **Step 4: goctl/go.mod**
 
-`module github.com/anyoptional/jinx-goctl`，`go 1.25`，`require github.com/zeromicro/go-zero v1.10.1` + `github.com/anyoptional/jinx v0.0.0`。
+`module github.com/anyoptional/vela-goctl`，`go 1.25`，`require github.com/zeromicro/go-zero v1.10.1` + `github.com/anyoptional/vela v0.0.0`。
 
 - [ ] **Step 5: go.work**
 
@@ -80,7 +80,7 @@ Co-Authored-By: Claude Code <noreply@anthropic.com>"
 ### Task 1: core 类型与接口 + 内置 round-robin
 
 **Files:**
-- Create: `instance.go`、`discovery.go`、`loadbalancer.go`、`errors.go`（均 package `jinx`，根目录）
+- Create: `instance.go`、`discovery.go`、`loadbalancer.go`、`errors.go`（均 package `vela`，根目录）
 - Test: `loadbalancer_test.go`
 
 **Interfaces:**
@@ -106,10 +106,10 @@ type LoadBalancer interface {
     Choose(ctx context.Context, serviceID string, candidates []Instance) (Instance, error)
 }
 
-var ErrNoInstances = errors.New("jinx: no instances available")
+var ErrNoInstances = errors.New("vela: no instances available")
 
 type TransportError struct{ Err error }
-// Error(): "jinx: transport: " + Err.Error()；Unwrap() 返回 Err
+// Error(): "vela: transport: " + Err.Error()；Unwrap() 返回 Err
 ```
 
 - Produces（内部 seam）：`type roundRobin struct { mu sync.Mutex; next map[string]int }`、`func newRoundRobin() *roundRobin`、`func (r *roundRobin) Choose(ctx context.Context, serviceID string, candidates []Instance) (Instance, error)`
@@ -201,7 +201,7 @@ type Response struct {
 }
 ```
 
-- Produces（内部 seam）：`func buildURL(ins Instance, path string, pathParams map[string]string) (string, error)` — scheme `https` iff `ins.Secure`；展开 `:name`；缺失参数返回 `fmt.Errorf("jinx: missing path param %q", name)`；path 空 → `/`。
+- Produces（内部 seam）：`func buildURL(ins Instance, path string, pathParams map[string]string) (string, error)` — scheme `https` iff `ins.Secure`；展开 `:name`；缺失参数返回 `fmt.Errorf("vela: missing path param %q", name)`；path 空 → `/`。
 
 - [ ] **Step 1: 写失败测试 `TestBuildURL`（表驱动）/ `TestRequest_Setters`**
 
@@ -234,10 +234,10 @@ Expected: PASS
 - Produces（内部 seam）：`type transport func(ctx context.Context, req *http.Request) (*http.Response, error)`；`Client.transport` 字段默认由 Task 5 的 resty 实现填充（本任务测试用同包注入 fake）。
 - Produces（内部 seam）：`type cooldownTracker struct { mu sync.Mutex; until map[insKey]time.Time; now func() time.Time }`，`insKey = struct{ secure bool; host string; port int }`；方法 `mark(ins Instance)`、`isCooling(ins Instance) bool`、`len()`。
 - Do 算法（实现按此，无自由发挥）：
-  1. `Instances(ctx, serviceID)`；err → `fmt.Errorf("jinx: discover %q: %w", serviceID, err)`；空 → `ErrNoInstances`。
+  1. `Instances(ctx, serviceID)`；err → `fmt.Errorf("vela: discover %q: %w", serviceID, err)`；空 → `ErrNoInstances`。
   2. 循环 ≤ maxAttempts：候选过滤（去 tried；若有非冷却实例只用非冷却，否则用全部冷却实例）；过滤后空 → 跳出。
   3. `lb.Choose` → `buildURL` → 组 `*http.Request`（body 用 `json.Marshal`，失败即返回 marshal 错误，不触网）→ `transport(ctx, req)`；记录 tried。
-  4. 2xx → `SetResult` 解码（`json.Unmarshal` 到 result，解码失败返回 wrapped 错误）并返回 Response；4xx → 返回 Response + `fmt.Errorf("jinx: unexpected status %d: %s", code, 摘录)`（摘录 = body 前 512B）；5xx → 继续（不冷却）；transport err → `cooldownTracker.mark` + 继续。
+  4. 2xx → `SetResult` 解码（`json.Unmarshal` 到 result，解码失败返回 wrapped 错误）并返回 Response；4xx → 返回 Response + `fmt.Errorf("vela: unexpected status %d: %s", code, 摘录)`（摘录 = body 前 512B）；5xx → 继续（不冷却）；transport err → `cooldownTracker.mark` + 继续。
   5. 循环耗尽：最后一次是 transport err → `&TransportError{Err: err}` 包 attempts 计数入 message；最后一次是 5xx → 5xx 错误；否则 `ErrNoInstances`。
 
 - [ ] **Step 1: 写失败测试（fake transport：map 按 host 路由到预设响应/错误，记录调用顺序）**
@@ -278,7 +278,7 @@ Expected: PASS
 
 **Interfaces:**
 - Consumes: Task 4 的 `transport` seam；Task 2 的 config
-- Produces（内部）：`func newRestyTransport(cfg config, logger *slog.Logger) transport` — resty v3 客户端：重试全关（转移由 Task 4 循环做）、每尝试超时 = cfg.perAttemptTimeout、UA `jinx`、header/query 透传；错误一律转成**不含 resty 类型的** error（`errors.New(清洗后的消息)`），再包 `TransportError`。
+- Produces（内部）：`func newRestyTransport(cfg config, logger *slog.Logger) transport` — resty v3 客户端：重试全关（转移由 Task 4 循环做）、每尝试超时 = cfg.perAttemptTimeout、UA `vela`、header/query 透传；错误一律转成**不含 resty 类型的** error（`errors.New(清洗后的消息)`），再包 `TransportError`。
 
 - [ ] **Step 1: 写失败测试 `TestRestyTransport_RoundTrip` / `TestRestyTransport_Timeout` / `TestRestyTransport_ErrorSanitized`**
 
@@ -306,19 +306,19 @@ Expected: PASS
 - Create: `eureka/adapter.go`、`eureka/adapter_test.go`、`eureka/live_integration_test.go`、`eureka/README.md`、`eureka/README.zh-CN.md`
 
 **Interfaces:**
-- Consumes: Task 1 的 `jinx.Instance` / `jinx.DiscoveryClient`；eureka-go `Client.InstancesOf(name, eureka.WithStatus(eureka.UP))`、`Client.Apps()`、`Instance.Metadata.GetMap()`
+- Consumes: Task 1 的 `vela.Instance` / `vela.DiscoveryClient`；eureka-go `Client.InstancesOf(name, eureka.WithStatus(eureka.UP))`、`Client.Apps()`、`Instance.Metadata.GetMap()`
 - Produces:
 
 ```go
 package eurekaadapter
 
-func New(c *eureka.Client) jinx.DiscoveryClient
+func New(c *eureka.Client) vela.DiscoveryClient
 // Description() = "eureka-go"
 // Services(ctx) = keys of c.Apps()
 // Instances(ctx, serviceID) = c.InstancesOf(serviceID, eureka.WithStatus(eureka.UP)) 映射后返回
 ```
 
-- 映射规则（内部 `func mapInstance(in *eureka.Instance) (jinx.Instance, bool)`）：`Host` = `IPAddr`，空则 `HostName`；`Secure` = `SecurePort.Enabled`；secure 走 `SecurePort.Number` 否则 `Port.Number`；`Port.Enabled=false` 且 `SecurePort.Enabled=false` → 返回 false（滤掉）；`ID` = `in.Id()`；`ServiceID` = serviceID 入参；`Metadata` = `GetMap()` 的值 `fmt.Sprint` 成 `map[string]string`。
+- 映射规则（内部 `func mapInstance(in *eureka.Instance) (vela.Instance, bool)`）：`Host` = `IPAddr`，空则 `HostName`；`Secure` = `SecurePort.Enabled`；secure 走 `SecurePort.Number` 否则 `Port.Number`；`Port.Enabled=false` 且 `SecurePort.Enabled=false` → 返回 false（滤掉）；`ID` = `in.Id()`；`ServiceID` = serviceID 入参；`Metadata` = `GetMap()` 的值 `fmt.Sprint` 成 `map[string]string`。
 - 日志桥接（内部 `func newSlogLogr(l *slog.Logger) logr.Logger`）：把 slog 包装成 logr，供 `eureka.Client.SetLogger` 使用（slog→logr 只映射 Info/Error 两档，键值对透传）。
 
 - [ ] **Step 1: 写失败测试 `TestMapInstance`（表驱动）+ `TestSlogLogr_Smoke`**
@@ -339,9 +339,9 @@ Expected: PASS
 
 - [ ] **Step 5: live 集成测试（env 门控）**
 
-`live_integration_test.go`：`JINX_EUREKA_URL` 未设 → `t.Skip`；已设 → 用 eureka-go 注册一个临时实例，断言 adapter `Instances` 能看到。Run: `JINX_EUREKA_URL=... go test ./... -run TestLive -v`（本地无 eureka 则跳过，CI 不跑）。
+`live_integration_test.go`：`vela_EUREKA_URL` 未设 → `t.Skip`；已设 → 用 eureka-go 注册一个临时实例，断言 adapter `Instances` 能看到。Run: `vela_EUREKA_URL=... go test ./... -run TestLive -v`（本地无 eureka 则跳过，CI 不跑）。
 
-- [ ] **Step 6: README 双语**（用法：`eurekaadapter.New(eurekaClient)` 喂给 `jinx.New`）
+- [ ] **Step 6: README 双语**（用法：`eurekaadapter.New(eurekaClient)` 喂给 `vela.New`）
 
 - [ ] **Step 7: 提交** `feat: add eureka discovery adapter`
 
@@ -351,7 +351,7 @@ Expected: PASS
 - Create: `goctl/main.go`、`goctl/gen.go`（遍历 spec + 类型路径推导）、`goctl/template.go`（`text/template`）、`goctl/gen_test.go`、`goctl/testdata/*.api` + 对应 golden 文件、`goctl/README.md`、`goctl/README.zh-CN.md`
 
 **Interfaces:**
-- Consumes: goctl 插件协议 `github.com/zeromicro/go-zero/tools/goctl/plugin`（`plugin.NewPlugin()` → `Api *spec.ApiSpec`、`Dir`、`Style`）；命名转换 `github.com/zeromicro/go-zero/core/stringx`；core 模块 `jinx.Client`/`jinx.Request`
+- Consumes: goctl 插件协议 `github.com/zeromicro/go-zero/tools/goctl/plugin`（`plugin.NewPlugin()` → `Api *spec.ApiSpec`、`Dir`、`Style`）；命名转换 `github.com/zeromicro/go-zero/core/stringx`；core 模块 `vela.Client`/`vela.Request`
 - Produces：`Dir/client.go`——interface 名 = `stringx.From(serviceName).ToCamel()`（service 块名）；方法名 = `@handler` 的 Camel；每个 route：
 
 ```go
@@ -360,9 +360,9 @@ GetOrder(ctx context.Context, id string, req *types.GetOrderReq) (*types.GetOrde
 ```
 
   - path 参数按出现顺序做位置参数（类型 = spec 里声明类型）；有 RequestType 才加 req 参数；GET/DELETE 无 body
-  - **form/query 参数 → 直接报错** `"jinx-goctl: unsupported form param %q"`（v1 非目标，明示失败不静默丢参数）
-  - 实现 struct `<camel(serviceName)>Client`（字段 `c *jinx.Client`）+ 构造函数 `New<Camel>Client(c *jinx.Client) <Camel>`；方法体：`c.NewRequest(serviceID, method, prefix+path)` + path params + req body + `SetResult`
-  - types import：解析 Dir 的 go.mod 取 module，拼 `<module>/internal/types`；无 go.mod 或布局异常 → 报错 `"jinx-goctl: cannot derive types package from %s"`
+  - **form/query 参数 → 直接报错** `"vela-goctl: unsupported form param %q"`（v1 非目标，明示失败不静默丢参数）
+  - 实现 struct `<camel(serviceName)>Client`（字段 `c *vela.Client`）+ 构造函数 `New<Camel>Client(c *vela.Client) <Camel>`；方法体：`c.NewRequest(serviceID, method, prefix+path)` + path params + req body + `SetResult`
+  - types import：解析 Dir 的 go.mod 取 module，拼 `<module>/internal/types`；无 go.mod 或布局异常 → 报错 `"vela-goctl: cannot derive types package from %s"`
 
 - [ ] **Step 1: 写 fixture**
 
@@ -388,11 +388,11 @@ Expected: PASS
 
 - [ ] **Step 6: 编译验证生成代码可编译**
 
-临时项目（module + go.mod require jinx + goctl 生成 + 手写 types 包）`go build ./...` PASS；`go vet ./...` PASS。
+临时项目（module + go.mod require vela + goctl 生成 + 手写 types 包）`go build ./...` PASS；`go vet ./...` PASS。
 
 - [ ] **Step 7: README 双语**
 
-调用方式：`go build -o goctl-jinx .` 放 PATH，然后 `goctl api plugin --plugin goctl-jinx -api order.api -dir .`。
+调用方式：`go build -o goctl-vela .` 放 PATH，然后 `goctl api plugin --plugin goctl-vela -api order.api -dir .`。
 
 - [ ] **Step 8: 提交** `feat: add goctl plugin generating typed clients`
 

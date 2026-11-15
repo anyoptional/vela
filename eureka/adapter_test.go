@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	eureka "github.com/anyoptional/eureka-go"
-	"github.com/anyoptional/jinx"
+	"github.com/anyoptional/vela"
 )
 
 func TestMapInstance(t *testing.T) {
@@ -16,7 +16,7 @@ func TestMapInstance(t *testing.T) {
 		name      string
 		input     *eureka.Instance
 		serviceID string
-		want      jinx.Instance
+		want      vela.Instance
 		wantOK    bool
 	}{
 		{
@@ -31,7 +31,7 @@ func TestMapInstance(t *testing.T) {
 				Metadata:   eureka.InstanceMetadata{Raw: []byte(`{"zone":"west","weight":3}`)},
 			},
 			serviceID: "orders",
-			want: jinx.Instance{
+			want: vela.Instance{
 				ID:        "orders-1",
 				ServiceID: "orders",
 				Host:      "10.0.0.1",
@@ -48,7 +48,7 @@ func TestMapInstance(t *testing.T) {
 				Port:       eureka.Port{Number: 8081, Enabled: true},
 			},
 			serviceID: "orders",
-			want: jinx.Instance{
+			want: vela.Instance{
 				ID:        "orders-2",
 				ServiceID: "orders",
 				Host:      "orders.local",
@@ -65,7 +65,7 @@ func TestMapInstance(t *testing.T) {
 				SecurePort: eureka.Port{Number: 8443, Enabled: true},
 			},
 			serviceID: "orders",
-			want: jinx.Instance{
+			want: vela.Instance{
 				ID:        "orders-3",
 				ServiceID: "orders",
 				Host:      "10.0.0.3",

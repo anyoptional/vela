@@ -179,7 +179,7 @@ func TestDeriveTypesPkg(t *testing.T) {
 
 	t.Run("reports missing go.mod", func(t *testing.T) {
 		_, err := deriveTypesPkg(t.TempDir())
-		if err == nil || !strings.Contains(err.Error(), "jinx-goctl: cannot derive types package from") {
+		if err == nil || !strings.Contains(err.Error(), "vela-goctl: cannot derive types package from") {
 			t.Fatalf("deriveTypesPkg() error = %v, want cannot derive types package error", err)
 		}
 	})
@@ -247,7 +247,7 @@ import (
 	"time"
 
 	types "example.com/svc/types"
-	"github.com/anyoptional/jinx"
+	"github.com/anyoptional/vela"
 )
 
 type fallbackAPI struct {
@@ -293,12 +293,12 @@ func (f *fallbackAPI) UpdateOrderStatus(_ context.Context, _ *types.UpdateStatus
 }
 
 type fakeDiscovery struct {
-	instances []jinx.Instance
+	instances []vela.Instance
 	err       error
 }
 
 func (d fakeDiscovery) Description() string { return "fixture" }
-func (d fakeDiscovery) Instances(context.Context, string) ([]jinx.Instance, error) {
+func (d fakeDiscovery) Instances(context.Context, string) ([]vela.Instance, error) {
 	return d.instances, d.err
 }
 func (fakeDiscovery) Services(context.Context) ([]string, error) { return nil, nil }
@@ -314,15 +314,15 @@ func response(req *http.Request, status int, body string) *http.Response {
 
 func newClient(
 	t *testing.T,
-	target jinx.Target,
-	discovery jinx.DiscoveryClient,
-	transport jinx.Transport,
+	target vela.Target,
+	discovery vela.DiscoveryClient,
+	transport vela.Transport,
 	fallback *fallbackAPI,
-	availability func(*jinx.Failure) bool,
-	options ...jinx.Option,
+	availability func(*vela.Failure) bool,
+	options ...vela.Option,
 ) OrderApi {
 	t.Helper()
-	clientOptions := []jinx.Option{jinx.WithMaxAttempts(1), jinx.WithTransport(transport)}
+	clientOptions := []vela.Option{vela.WithMaxAttempts(1), vela.WithTransport(transport)}
 	clientOptions = append(clientOptions, options...)
 	client, err := NewOrderApiClient(OrderApiClientConfig{
 		Target:       target,
@@ -338,8 +338,8 @@ func newClient(
 }
 
 func TestStaticFallbackRunsForAvailabilityFailures(t *testing.T) {
-	target := jinx.Target{Name: "orders"}
-	direct := jinx.Target{Name: "orders", URL: "http://orders.test"}
+	target := vela.Target{Name: "orders"}
+	direct := vela.Target{Name: "orders", URL: "http://orders.test"}
 	neverTransport := func(context.Context, *http.Request) (*http.Response, error) {
 		return nil, errors.New("unexpected transport call")
 	}
@@ -355,15 +355,15 @@ func TestStaticFallbackRunsForAvailabilityFailures(t *testing.T) {
 	}
 	tests := []struct {
 		name      string
-		target    jinx.Target
-		discovery jinx.DiscoveryClient
-		transport jinx.Transport
-		options   []jinx.Option
+		target    vela.Target
+		discovery vela.DiscoveryClient
+		transport vela.Transport
+		options   []vela.Option
 	}{
 		{name: "discovery failure", target: target, discovery: fakeDiscovery{err: errors.New("registry offline")}, transport: neverTransport},
 		{name: "empty pool", target: target, discovery: fakeDiscovery{}, transport: neverTransport},
 		{name: "transport failure", target: direct, transport: transportFailure},
-		{name: "attempt timeout", target: direct, transport: timeout, options: []jinx.Option{jinx.WithTimeout(5 * time.Millisecond)}},
+		{name: "attempt timeout", target: direct, transport: timeout, options: []vela.Option{vela.WithTimeout(5 * time.Millisecond)}},
 		{name: "final 5xx", target: direct, transport: statusFailure},
 	}
 
@@ -390,19 +390,19 @@ func TestDefaultAvailabilitySkipsClientAndDecodeFailures(t *testing.T) {
 		name      string
 		status    int
 		body      string
-		wantKind  jinx.Kind
+		wantKind  vela.Kind
 	}{
-		{name: "429", status: http.StatusTooManyRequests, body: "busy", wantKind: jinx.KindStatus},
-		{name: "decode", status: http.StatusOK, body: "not-json", wantKind: jinx.KindDecode},
+		{name: "429", status: http.StatusTooManyRequests, body: "busy", wantKind: vela.KindStatus},
+		{name: "decode", status: http.StatusOK, body: "not-json", wantKind: vela.KindDecode},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			fallback := &fallbackAPI{}
-			client := newClient(t, jinx.Target{Name: "orders", URL: "http://orders.test"}, nil, func(_ context.Context, req *http.Request) (*http.Response, error) {
+			client := newClient(t, vela.Target{Name: "orders", URL: "http://orders.test"}, nil, func(_ context.Context, req *http.Request) (*http.Response, error) {
 				return response(req, tt.status, tt.body), nil
 			}, fallback, nil)
 			_, err := client.GetOrder(t.Context(), &types.GetOrderReq{Id: 42})
-			var failure *jinx.Failure
+			var failure *vela.Failure
 			if !errors.As(err, &failure) || failure.Kind != tt.wantKind {
 				t.Fatalf("GetOrder() error = %v, want %v", err, tt.wantKind)
 			}
@@ -417,15 +417,15 @@ func TestCallerCancellationSkipsFallback(t *testing.T) {
 	fallback := &fallbackAPI{}
 	ctx, cancel := context.WithCancel(t.Context())
 	calls := 0
-	client := newClient(t, jinx.Target{Name: "orders", URL: "http://orders.test"}, nil, func(context.Context, *http.Request) (*http.Response, error) {
+	client := newClient(t, vela.Target{Name: "orders", URL: "http://orders.test"}, nil, func(context.Context, *http.Request) (*http.Response, error) {
 		calls++
 		cancel()
 		return nil, context.Canceled
 	}, fallback, nil)
 
 	_, err := client.GetOrder(ctx, &types.GetOrderReq{Id: 42})
-	var failure *jinx.Failure
-	if !errors.As(err, &failure) || failure.Kind != jinx.KindCanceled {
+	var failure *vela.Failure
+	if !errors.As(err, &failure) || failure.Kind != vela.KindCanceled {
 		t.Fatalf("GetOrder() error = %v, want canceled failure", err)
 	}
 	if calls != 1 || fallback.calls != 0 {
@@ -444,9 +444,9 @@ func TestCustomAvailabilityCanRecover429AndDecode(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			fallback := &fallbackAPI{}
-			client := newClient(t, jinx.Target{Name: "orders", URL: "http://orders.test"}, nil, func(_ context.Context, req *http.Request) (*http.Response, error) {
+			client := newClient(t, vela.Target{Name: "orders", URL: "http://orders.test"}, nil, func(_ context.Context, req *http.Request) (*http.Response, error) {
 				return response(req, tt.status, tt.body), nil
-			}, fallback, func(*jinx.Failure) bool { return true })
+			}, fallback, func(*vela.Failure) bool { return true })
 			result, err := client.GetOrder(t.Context(), &types.GetOrderReq{Id: 42})
 			if err != nil {
 				t.Fatalf("GetOrder(): %v", err)
@@ -461,17 +461,17 @@ func TestCustomAvailabilityCanRecover429AndDecode(t *testing.T) {
 func TestFallbackFactoryReceivesFailureAndResponseAndJoinsErrors(t *testing.T) {
 	fallbackErr := errors.New("fallback failed")
 	fallback := &fallbackAPI{err: fallbackErr}
-	var factoryFailure *jinx.Failure
-	var factoryResponse *jinx.Response
+	var factoryFailure *vela.Failure
+	var factoryResponse *vela.Response
 	client, err := NewOrderApiClient(OrderApiClientConfig{
-		Target: jinx.Target{Name: "orders", URL: "http://orders.test"},
-		ClientOptions: []jinx.Option{
-			jinx.WithMaxAttempts(1),
-			jinx.WithTransport(func(_ context.Context, req *http.Request) (*http.Response, error) {
+		Target: vela.Target{Name: "orders", URL: "http://orders.test"},
+		ClientOptions: []vela.Option{
+			vela.WithMaxAttempts(1),
+			vela.WithTransport(func(_ context.Context, req *http.Request) (*http.Response, error) {
 				return response(req, http.StatusBadGateway, "unavailable"), nil
 			}),
 		},
-		FallbackFactory: func(_ context.Context, failure *jinx.Failure, response *jinx.Response) (OrderApi, error) {
+		FallbackFactory: func(_ context.Context, failure *vela.Failure, response *vela.Response) (OrderApi, error) {
 			factoryFailure = failure
 			factoryResponse = response
 			return fallback, nil
@@ -485,8 +485,8 @@ func TestFallbackFactoryReceivesFailureAndResponseAndJoinsErrors(t *testing.T) {
 	if !errors.Is(err, fallbackErr) {
 		t.Errorf("GetOrder() error = %v, want fallback error", err)
 	}
-	var gotFailure *jinx.Failure
-	if !errors.As(err, &gotFailure) || gotFailure != factoryFailure || gotFailure.Kind != jinx.KindStatus {
+	var gotFailure *vela.Failure
+	if !errors.As(err, &gotFailure) || gotFailure != factoryFailure || gotFailure.Kind != vela.KindStatus {
 		t.Errorf("joined failure = %#v, factory failure = %#v", gotFailure, factoryFailure)
 	}
 	if factoryResponse == nil || factoryResponse.StatusCode != http.StatusBadGateway {
@@ -495,17 +495,17 @@ func TestFallbackFactoryReceivesFailureAndResponseAndJoinsErrors(t *testing.T) {
 }
 
 func TestFallbackFactoryReceivesNilResponseForTransportFailure(t *testing.T) {
-	var factoryResponse *jinx.Response
+	var factoryResponse *vela.Response
 	fallback := &fallbackAPI{}
 	client, err := NewOrderApiClient(OrderApiClientConfig{
-		Target: jinx.Target{Name: "orders", URL: "http://orders.test"},
-		ClientOptions: []jinx.Option{
-			jinx.WithMaxAttempts(1),
-			jinx.WithTransport(func(context.Context, *http.Request) (*http.Response, error) {
+		Target: vela.Target{Name: "orders", URL: "http://orders.test"},
+		ClientOptions: []vela.Option{
+			vela.WithMaxAttempts(1),
+			vela.WithTransport(func(context.Context, *http.Request) (*http.Response, error) {
 				return nil, errors.New("connection failed")
 			}),
 		},
-		FallbackFactory: func(_ context.Context, _ *jinx.Failure, response *jinx.Response) (OrderApi, error) {
+		FallbackFactory: func(_ context.Context, _ *vela.Failure, response *vela.Response) (OrderApi, error) {
 			factoryResponse = response
 			return fallback, nil
 		},
@@ -524,9 +524,9 @@ func TestFallbackFactoryReceivesNilResponseForTransportFailure(t *testing.T) {
 func TestStaticFallbackAndFactoryAreMutuallyExclusive(t *testing.T) {
 	fallback := &fallbackAPI{}
 	_, err := NewOrderApiClient(OrderApiClientConfig{
-		Target:   jinx.Target{Name: "orders", URL: "http://orders.test"},
+		Target:   vela.Target{Name: "orders", URL: "http://orders.test"},
 		Fallback: fallback,
-		FallbackFactory: func(context.Context, *jinx.Failure, *jinx.Response) (OrderApi, error) {
+		FallbackFactory: func(context.Context, *vela.Failure, *vela.Response) (OrderApi, error) {
 			return fallback, nil
 		},
 	})
@@ -537,7 +537,7 @@ func TestStaticFallbackAndFactoryAreMutuallyExclusive(t *testing.T) {
 
 func TestErrorOnlyRouteFallback(t *testing.T) {
 	fallback := &fallbackAPI{}
-	client := newClient(t, jinx.Target{Name: "orders", URL: "http://orders.test"}, nil, func(_ context.Context, req *http.Request) (*http.Response, error) {
+	client := newClient(t, vela.Target{Name: "orders", URL: "http://orders.test"}, nil, func(_ context.Context, req *http.Request) (*http.Response, error) {
 		return response(req, http.StatusBadGateway, "unavailable"), nil
 	}, fallback, nil)
 	if err := client.DeleteOrder(t.Context(), &types.GetOrderReq{Id: 7}); err != nil {
@@ -549,15 +549,15 @@ func TestErrorOnlyRouteFallback(t *testing.T) {
 
 	fallbackErr := errors.New("delete fallback failed")
 	fallback = &fallbackAPI{err: fallbackErr}
-	client = newClient(t, jinx.Target{Name: "orders", URL: "http://orders.test"}, nil, func(_ context.Context, req *http.Request) (*http.Response, error) {
+	client = newClient(t, vela.Target{Name: "orders", URL: "http://orders.test"}, nil, func(_ context.Context, req *http.Request) (*http.Response, error) {
 		return response(req, http.StatusBadGateway, "unavailable"), nil
 	}, fallback, nil)
 	err := client.DeleteOrder(t.Context(), &types.GetOrderReq{Id: 7})
 	if !errors.Is(err, fallbackErr) {
 		t.Errorf("DeleteOrder() error = %v, want fallback error", err)
 	}
-	var failure *jinx.Failure
-	if !errors.As(err, &failure) || failure.Kind != jinx.KindStatus {
+	var failure *vela.Failure
+	if !errors.As(err, &failure) || failure.Kind != vela.KindStatus {
 		t.Errorf("joined failure = %#v, want KindStatus", failure)
 	}
 }
@@ -576,7 +576,7 @@ func TestTagWiring(t *testing.T) {
 		}
 		return response(req, http.StatusOK, "{\"id\":42}"), nil
 	}
-	client := newClient(t, jinx.Target{Name: "orders", URL: "http://orders.test"}, nil, capture, fallback, nil)
+	client := newClient(t, vela.Target{Name: "orders", URL: "http://orders.test"}, nil, capture, fallback, nil)
 
 	if _, err := client.GetOrder(t.Context(), &types.GetOrderReq{Id: 42, Token: "t-1"}); err != nil {
 		t.Fatalf("GetOrder(): %v", err)
@@ -612,9 +612,9 @@ func TestTagWiring(t *testing.T) {
 func TestGeneratedDefaultTarget(t *testing.T) {
 	var gotHost string
 	client, err := NewOrderApiClient(OrderApiClientConfig{
-		ClientOptions: []jinx.Option{
-			jinx.WithMaxAttempts(1),
-			jinx.WithTransport(func(_ context.Context, req *http.Request) (*http.Response, error) {
+		ClientOptions: []vela.Option{
+			vela.WithMaxAttempts(1),
+			vela.WithTransport(func(_ context.Context, req *http.Request) (*http.Response, error) {
 				gotHost = req.URL.Host
 				return response(req, http.StatusOK, "{\"id\":1}"), nil
 			}),
@@ -659,7 +659,7 @@ func writeBuildModule(t *testing.T, dir string) {
 		t.Fatalf("filepath.Abs(): %v", err)
 	}
 	content := fmt.Sprintf(
-		"module example.com/svc\n\ngo 1.25\n\nrequire github.com/anyoptional/jinx v0.0.0\n\nreplace github.com/anyoptional/jinx => %s\n",
+		"module example.com/svc\n\ngo 1.25\n\nrequire github.com/anyoptional/vela v0.0.0\n\nreplace github.com/anyoptional/vela => %s\n",
 		filepath.ToSlash(coreDir),
 	)
 	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(content), 0o600); err != nil {

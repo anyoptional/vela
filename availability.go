@@ -1,4 +1,4 @@
-package jinx
+package vela
 
 // DefaultAvailability reports whether a failure indicates a likely availability problem.
 func DefaultAvailability(failure *Failure) bool {

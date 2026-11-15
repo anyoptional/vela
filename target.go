@@ -1,4 +1,4 @@
-package jinx
+package vela
 
 import (
 	"errors"
@@ -33,7 +33,7 @@ func (t Target) Mode() TargetMode {
 // Validate checks target fields before any network activity.
 func (t Target) Validate() error {
 	if strings.TrimSpace(t.Name) == "" {
-		return errors.New("jinx: target name is required")
+		return errors.New("vela: target name is required")
 	}
 	if t.URL == "" {
 		return nil
@@ -42,10 +42,10 @@ func (t Target) Validate() error {
 	parsed, err := url.Parse(t.URL)
 	if err != nil || !parsed.IsAbs() || parsed.Opaque != "" || parsed.Host == "" ||
 		parsed.Hostname() == "" || (!strings.EqualFold(parsed.Scheme, "http") && !strings.EqualFold(parsed.Scheme, "https")) {
-		return errors.New("jinx: direct target URL must be an absolute http or https URL with a host")
+		return errors.New("vela: direct target URL must be an absolute http or https URL with a host")
 	}
 	if parsed.RawQuery != "" || parsed.ForceQuery || strings.Contains(t.URL, "#") {
-		return errors.New("jinx: direct target URL must not contain query or fragment")
+		return errors.New("vela: direct target URL must not contain query or fragment")
 	}
 	return nil
 }

@@ -1,14 +1,14 @@
-# jinx
+# vela
 
-jinx 是一个 Go 客户端侧负载均衡 HTTP 库。它支持通过服务发现访问具名服务，或直接访问配置的 HTTP(S) URL；服务模式下可在实例间故障转移，并提供可定制的尝试策略与结构化故障信息。
+vela 是一个 Go 客户端侧负载均衡 HTTP 库。它支持通过服务发现访问具名服务，或直接访问配置的 HTTP(S) URL；服务模式下可在实例间故障转移，并提供可定制的尝试策略与结构化故障信息。
 
 仓库使用 Go workspace 管理三个独立模块：
 
 | 模块 | 用途 |
 | --- | --- |
-| [`github.com/anyoptional/jinx`](./go.mod) | 核心 HTTP 客户端、服务发现接口、负载均衡与故障转移。 |
-| [`github.com/anyoptional/jinx-eureka`](./eureka/README.zh-CN.md) | 将 `eureka-go` 适配到核心服务发现接口。 |
-| [`github.com/anyoptional/jinx-goctl`](./goctl/README.zh-CN.md) | goctl API 插件，生成基于核心客户端的强类型调用代码。 |
+| [`github.com/anyoptional/vela`](./go.mod) | 核心 HTTP 客户端、服务发现接口、负载均衡与故障转移。 |
+| [`github.com/anyoptional/vela-eureka`](./eureka/README.zh-CN.md) | 将 `eureka-go` 适配到核心服务发现接口。 |
+| [`github.com/anyoptional/vela-goctl`](./goctl/README.zh-CN.md) | goctl API 插件，生成基于核心客户端的强类型调用代码。 |
 
 核心模块不依赖 Eureka 或 go-zero。适配器和代码生成器均为可选的独立模块。
 
@@ -19,14 +19,14 @@ jinx 是一个 Go 客户端侧负载均衡 HTTP 库。它支持通过服务发�
 服务模式必须提供 `Target.Name` 和 `DiscoveryClient`。名称同时用作服务发现 ID 和逻辑客户端标识：
 
 ```go
-func newOrdersClient(discovery jinx.DiscoveryClient) (*jinx.Client, error) {
-	return jinx.New(
-		jinx.Target{Name: "orders"},
-		jinx.WithDiscovery(discovery),
+func newOrdersClient(discovery vela.DiscoveryClient) (*vela.Client, error) {
+	return vela.New(
+		vela.Target{Name: "orders"},
+		vela.WithDiscovery(discovery),
 	)
 }
 
-func getHealth(ctx context.Context, client *jinx.Client) error {
+func getHealth(ctx context.Context, client *vela.Client) error {
 	var result struct {
 		Status string `json:"status"`
 	}
@@ -48,7 +48,7 @@ func getHealth(ctx context.Context, client *jinx.Client) error {
 `Target.URL` 非空时，客户端直接访问该绝对 HTTP(S) URL，不需要 discovery，也不会使用负载均衡器。`Target.Name` 在直连模式下仍然必填：
 
 ```go
-client, err := jinx.New(jinx.Target{
+client, err := vela.New(vela.Target{
 	Name: "orders",
 	URL:  "http://127.0.0.1:8080",
 })
@@ -63,7 +63,7 @@ base URL 路径与 route path 合并；path 参数由请求构造器编码。目
 
 ### 请求与故障
 
-`NewRequest(method, path)` 创建请求。请求构造器支持 path/query 参数、请求头、JSON 请求体（`SetBody`）、表单体（`SetFormParam`，编码为 `application/x-www-form-urlencoded`，与 `SetBody` 互斥）和响应结果解码。`Do` 返回收到的 HTTP `Response`（包括非 2xx）和错误；错误可通过 `errors.As` 识别为 `*jinx.Failure`：
+`NewRequest(method, path)` 创建请求。请求构造器支持 path/query 参数、请求头、JSON 请求体（`SetBody`）、表单体（`SetFormParam`，编码为 `application/x-www-form-urlencoded`，与 `SetBody` 互斥）和响应结果解码。`Do` 返回收到的 HTTP `Response`（包括非 2xx）和错误；错误可通过 `errors.As` 识别为 `*vela.Failure`：
 
 | 故障类别 | 含义 | 默认可用性故障 |
 | --- | --- | --- |
@@ -75,13 +75,13 @@ base URL 路径与 route path 合并；path 参数由请求构造器编码。目
 | `KindCanceled` | 调用方取消或整体 deadline 到期 | 否 |
 
 ```go
-var failure *jinx.Failure
+var failure *vela.Failure
 if errors.As(err, &failure) {
 	slog.Error("请求失败", "kind", failure.Kind, "status", failure.StatusCode)
 }
 ```
 
-`Failure` 的 `Unwrap` 保留根因。core 包提供 `jinx.DefaultAvailability` 谓词；强类型 fallback 动作由 goctl 生成层负责，参见 [goctl 插件指南](./goctl/README.zh-CN.md)。
+`Failure` 的 `Unwrap` 保留根因。core 包提供 `vela.DefaultAvailability` 谓词；强类型 fallback 动作由 goctl 生成层负责，参见 [goctl 插件指南](./goctl/README.zh-CN.md)。
 
 ## 尝试策略与超时
 
@@ -93,19 +93,19 @@ if errors.As(err, &failure) {
 ```go
 retry429 := func(
 	_ context.Context,
-	failure *jinx.Failure,
-	_ jinx.AttemptState,
-) (jinx.AttemptAction, error) {
-	if failure.Kind == jinx.KindStatus && failure.StatusCode == http.StatusTooManyRequests {
-		return jinx.AttemptRetrySameEndpoint, nil
+	failure *vela.Failure,
+	_ vela.AttemptState,
+) (vela.AttemptAction, error) {
+	if failure.Kind == vela.KindStatus && failure.StatusCode == http.StatusTooManyRequests {
+		return vela.AttemptRetrySameEndpoint, nil
 	}
-	return jinx.AttemptNext, nil
+	return vela.AttemptNext, nil
 }
 
-client, err := jinx.New(
-	jinx.Target{Name: "orders", URL: "http://127.0.0.1:8080"},
-	jinx.WithMaxAttempts(3),
-	jinx.WithAttemptPolicies([]jinx.AttemptPolicy{retry429}),
+client, err := vela.New(
+	vela.Target{Name: "orders", URL: "http://127.0.0.1:8080"},
+	vela.WithMaxAttempts(3),
+	vela.WithAttemptPolicies([]vela.AttemptPolicy{retry429}),
 )
 ```
 
@@ -117,9 +117,9 @@ client, err := jinx.New(
 默认冷却时长为 10 秒，可用 `WithCooldown` 配置；负值关闭冷却：
 
 ```go
-client, err := jinx.New(target,
-	jinx.WithDiscovery(discovery),
-	jinx.WithCooldown(10*time.Second),
+client, err := vela.New(target,
+	vela.WithDiscovery(discovery),
+	vela.WithCooldown(10*time.Second),
 )
 ```
 
@@ -132,14 +132,14 @@ roundTrip := func(ctx context.Context, req *http.Request) (*http.Response, error
 	return http.DefaultTransport.RoundTrip(req.WithContext(ctx))
 }
 
-client, err := jinx.New(target, jinx.WithTransport(roundTrip))
+client, err := vela.New(target, vela.WithTransport(roundTrip))
 ```
 
-自定义 transport 应返回响应及错误；响应体由 jinx 读取并关闭。
+自定义 transport 应返回响应及错误；响应体由 vela 读取并关闭。
 
 ## 接入 Eureka
 
-配置并启动 `eureka-go` 客户端，再将其适配给 jinx。Eureka 应用名必须与 `Target.Name` 中的服务 ID 一致：
+配置并启动 `eureka-go` 客户端，再将其适配给 vela。Eureka 应用名必须与 `Target.Name` 中的服务 ID 一致：
 
 ```go
 cfg := eureka.DefaultConfig()
@@ -168,9 +168,9 @@ defer func() {
 	}
 }()
 
-client, err := jinx.New(
-	jinx.Target{Name: "orders"},
-	jinx.WithDiscovery(eurekaadapter.New(eurekaClient)),
+client, err := vela.New(
+	vela.Target{Name: "orders"},
+	vela.WithDiscovery(eurekaadapter.New(eurekaClient)),
 )
 ```
 
@@ -182,13 +182,13 @@ client, err := jinx.New(
 
 ```sh
 cd goctl
-go build -o goctl-jinx .
+go build -o goctl-vela .
 ```
 
 服务由第三方实现时，只声明如何调用。插件自包含——**不要运行 `goctl api go`**（它会生成 server 侧 routes/handler/logic 等不需要的代码），直接一条命令：
 
 ```sh
-goctl api plugin --plugin goctl-jinx -api order.api -dir .
+goctl api plugin --plugin goctl-vela -api order.api -dir .
 ```
 
 插件会生成 `<service>_api.go`（服务接口、强类型客户端配置、fallback 分派，文件名 = service 块名蛇形小写）和 `types/<service>_api.go`（导出子包，复用 goctl 的类型生成器）；`-dir` 可在模块子目录，types import 路径 = module path + 相对路径 + `/types`。预期用法是契约模块：api 文件放在独立模块里生成代码，消费方 import 该模块与 `<module>/types`。详细的服务发现、URL 直连、静态 fallback、fallback 工厂及自定义可用性示例见 [goctl 插件指南](./goctl/README.zh-CN.md)。
@@ -197,9 +197,9 @@ goctl api plugin --plugin goctl-jinx -api order.api -dir .
 
 仓库根目录的 workspace 管理 core、Eureka 和 goctl 模块。在各模块目录运行测试和 vet；workspace 会解析本地模块依赖。
 
-子模块当前依赖 workspace 占位版本 `github.com/anyoptional/jinx v0.0.0`。在发布子模块供 workspace 之外使用前，必须先将其更新为已发布的 core 版本。
+子模块当前依赖 workspace 占位版本 `github.com/anyoptional/vela v0.0.0`。在发布子模块供 workspace 之外使用前，必须先将其更新为已发布的 core 版本。
 
-核心模块当前在内部传输边界使用 Resty v3 RC-4；Resty 类型不会进入 jinx 的公开 API。
+核心模块当前在内部传输边界使用 Resty v3 RC-4；Resty 类型不会进入 vela 的公开 API。
 
 ## License
 

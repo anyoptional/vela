@@ -1,6 +1,6 @@
-# jinx-goctl
+# vela-goctl
 
-`jinx-goctl` 是 goctl API 插件，用于生成强类型服务接口、jinx 客户端配置和 fallback 分派代码。插件会在指定目录生成 `<service>` 命名的文件：文件名遵循 goctl `--style` 参数（`go_zero` 默认 → `order_api.go`，`gozero` → `orderApi.go`），types 在 `types/` 下同名文件。不同服务的 api 文件生成各自文件，可分开管理。
+`vela-goctl` 是 goctl API 插件，用于生成强类型服务接口、vela 客户端配置和 fallback 分派代码。插件会在指定目录生成 `<service>` 命名的文件：文件名遵循 goctl `--style` 参数（`go_zero` 默认 → `order_api.go`，`gozero` → `orderApi.go`），types 在 `types/` 下同名文件。不同服务的 api 文件生成各自文件，可分开管理。
 
 预期用法：在**独立的契约模块**里维护 api 文件并生成代码，需要调用的模块 import 契约模块即可。types 是导出的 `types` 子包（不是 `internal/`）——否则消费模块无法 import 请求/响应类型。
 
@@ -12,13 +12,13 @@
 
 ```sh
 cd goctl
-go build -o goctl-jinx .
+go build -o goctl-vela .
 ```
 
-然后直接生成类型与 jinx 客户端：
+然后直接生成类型与 vela 客户端：
 
 ```sh
-goctl api plugin --plugin goctl-jinx -api order.api -dir .
+goctl api plugin --plugin goctl-vela -api order.api -dir .
 ```
 
 目标目录不必在模块根：生成器从 `-dir` 向上查找最近的 `go.mod`，types 的 import 路径 = module path + 相对路径 + `/types`（如 `-dir` 为 `<root>/api/orders` 时导入 `example.com/svc/api/orders/types`）。如果目录中已有非测试 Go 文件，生成文件使用这些文件的 package 名；否则默认使用 `client`。
@@ -38,9 +38,9 @@ service 块名会原样作为逻辑服务 ID，`Target.Name` 取它、生成代�
 
 ```go
 orders, err := client.NewOrderApiClient(client.OrderApiClientConfig{
-	Target:        jinx.Target{Name: "orders"},
+	Target:        vela.Target{Name: "orders"},
 	Discovery:     eurekaadapter.New(eurekaClient),
-	ClientOptions: []jinx.Option{jinx.WithTimeout(3 * time.Second)},
+	ClientOptions: []vela.Option{vela.WithTimeout(3 * time.Second)},
 })
 if err != nil {
 	return err
@@ -49,11 +49,11 @@ if err != nil {
 order, err := orders.GetOrder(ctx, 42, &types.GetOrderReq{Id: 42})
 ```
 
-当 `Target.URL` 为空时，必须在 `Discovery` 或 `ClientOptions` 中提供 `jinx.DiscoveryClient`；服务名必须与注册中心的 ID 一致。直连时设置绝对 HTTP(S) URL，不需要 discovery，且跳过负载均衡：
+当 `Target.URL` 为空时，必须在 `Discovery` 或 `ClientOptions` 中提供 `vela.DiscoveryClient`；服务名必须与注册中心的 ID 一致。直连时设置绝对 HTTP(S) URL，不需要 discovery，且跳过负载均衡：
 
 ```go
 orders, err := client.NewOrderApiClient(client.OrderApiClientConfig{
-	Target: jinx.Target{
+	Target: vela.Target{
 		Name: "orders",
 		URL:  "https://orders.example.test",
 		Path: "/api/v1",
@@ -79,24 +79,24 @@ func (orderFallback) GetOrder(
 }
 
 orders, err := client.NewOrderApiClient(client.OrderApiClientConfig{
-	Target:    jinx.Target{Name: "orders", URL: "http://orders.example.test"},
+	Target:    vela.Target{Name: "orders", URL: "http://orders.example.test"},
 	Fallback:  orderFallback{},
 })
 ```
 
-默认 `jinx.DefaultAvailability` 只对 discovery/空池、传输故障、单次尝试超时和最终 5xx 执行 fallback。HTTP 4xx（包括 429）、响应解码错误和调用方取消不会触发默认 fallback。fallback 直接以原调用参数执行，不会再次包装成 jinx 主客户端。
+默认 `vela.DefaultAvailability` 只对 discovery/空池、传输故障、单次尝试超时和最终 5xx 执行 fallback。HTTP 4xx（包括 429）、响应解码错误和调用方取消不会触发默认 fallback。fallback 直接以原调用参数执行，不会再次包装成 vela 主客户端。
 
 ## fallback 工厂与自定义可用性
 
-静态 `Fallback` 和 `FallbackFactory` 互斥，同时配置会导致客户端构造失败。工厂接收原始 `*jinx.Failure` 与 HTTP `*jinx.Response`；传输故障没有 HTTP 响应，因此 `Response` 为 nil。可用自定义谓词替换默认的故障分类：
+静态 `Fallback` 和 `FallbackFactory` 互斥，同时配置会导致客户端构造失败。工厂接收原始 `*vela.Failure` 与 HTTP `*vela.Response`；传输故障没有 HTTP 响应，因此 `Response` 为 nil。可用自定义谓词替换默认的故障分类：
 
 ```go
 orders, err := client.NewOrderApiClient(client.OrderApiClientConfig{
-	Target: jinx.Target{Name: "orders", URL: "http://orders.example.test"},
+	Target: vela.Target{Name: "orders", URL: "http://orders.example.test"},
 	FallbackFactory: func(
 		ctx context.Context,
-		failure *jinx.Failure,
-		response *jinx.Response,
+		failure *vela.Failure,
+		response *vela.Response,
 	) (client.OrderApi, error) {
 		statusCode := 0
 		if response != nil {
@@ -109,17 +109,17 @@ orders, err := client.NewOrderApiClient(client.OrderApiClientConfig{
 		)
 		return orderFallback{}, nil
 	},
-	Availability: func(failure *jinx.Failure) bool {
-		return jinx.DefaultAvailability(failure) ||
-			(failure.Kind == jinx.KindStatus && failure.StatusCode == http.StatusTooManyRequests)
+	Availability: func(failure *vela.Failure) bool {
+		return vela.DefaultAvailability(failure) ||
+			(failure.Kind == vela.KindStatus && failure.StatusCode == http.StatusTooManyRequests)
 	},
 })
 ```
 
-`Availability` 是完整替换，不是自动叠加规则；如需保留默认分类，应显式调用 `jinx.DefaultAvailability`。应用也可以选择把解码错误等类别加入谓词。调用方 context 已取消时不会启动 fallback。
+`Availability` 是完整替换，不是自动叠加规则；如需保留默认分类，应显式调用 `vela.DefaultAvailability`。应用也可以选择把解码错误等类别加入谓词。调用方 context 已取消时不会启动 fallback。
 
-如果 fallback 方法本身返回错误，生成代码使用 `errors.Join` 同时保留原始 `*jinx.Failure` 和带有 `jinx: fallback` 上下文的 fallback 错误，可分别用 `errors.As` 与 `errors.Is` 检查。
+如果 fallback 方法本身返回错误，生成代码使用 `errors.Join` 同时保留原始 `*vela.Failure` 和带有 `vela: fallback` 上下文的 fallback 错误，可分别用 `errors.As` 与 `errors.Is` 检查。
 
 ## Windows
 
-Windows 下请使用 `go build -o goctl-jinx.exe .`，并确保 goctl 能找到该可执行文件。
+Windows 下请使用 `go build -o goctl-vela.exe .`，并确保 goctl 能找到该可执行文件。

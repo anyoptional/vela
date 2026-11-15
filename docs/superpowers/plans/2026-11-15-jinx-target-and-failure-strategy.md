@@ -1,4 +1,4 @@
-# jinx Target 与故障策略实施计划（评审修订版）
+# vela Target 与故障策略实施计划（评审修订版）
 
 > **供 Agent 执行：** 必须按任务逐项执行，并使用 `superpowers:subagent-driven-development`（推荐）或 `superpowers:executing-plans`。步骤使用 `- [ ]` 核对框。
 >
@@ -10,7 +10,7 @@
 
 **技术栈：** Go 1.25、`net/http`、现有 resty transport（内部）、goctl 生成器及 golden/build 测试。
 
-**设计方案：** `docs/superpowers/specs/2026-11-15-jinx-target-and-failure-strategy-design.md`
+**设计方案：** `docs/superpowers/specs/2026-11-15-vela-target-and-failure-strategy-design.md`
 
 ## 全局约束
 
@@ -22,7 +22,7 @@
 - 错误必须保留原因和响应上下文；错误字符串/日志不得暴露 URL userinfo、query 值或未限长响应体（摘录上限 512B 内部常量）；`Failure.Unwrap` 链不得含 resty 类型。
 - 不新增依赖。
 - 每个 Client 的策略配置不可变；单次请求的执行状态不得跨并发请求共享；冷却表并发安全（`-race` 验证）。
-- 测试：TDD（先写失败测试）+ 表驱动 + `-race`；live 集成测试环境变量门控（`JINX_EUREKA_URL`），CI 不跑。
+- 测试：TDD（先写失败测试）+ 表驱动 + `-race`；live 集成测试环境变量门控（`vela_EUREKA_URL`），CI 不跑。
 - 提交：Conventional Commits（`feat:`/`docs:`），提交信息末尾附 `Co-Authored-By: Claude Code <noreply@anthropic.com>`。
 - **文档仅中文**（用户指令，禁止英文文档）：README.zh-CN.md，不新建英文 README.md。
 
@@ -158,7 +158,7 @@ go test ./... -run 'TestNew_|TestDirectTarget|TestRequest_MissingPathParam' -cou
 
 - [ ] **步骤 4：更新生成客户端 API 并运行聚焦测试**
 
-更新 goctl 模板和 golden，使生成方法调用 `NewRequest(method, path)`；生成客户端构造函数本阶段仍接收已配置的 `*jinx.Client`。在 core 模块根目录运行 `go test ./... -count=1`，再在 `goctl` 目录运行同一命令。
+更新 goctl 模板和 golden，使生成方法调用 `NewRequest(method, path)`；生成客户端构造函数本阶段仍接收已配置的 `*vela.Client`。在 core 模块根目录运行 `go test ./... -count=1`，再在 `goctl` 目录运行同一命令。
 
 预期：均通过；直连请求不调用 discovery 或 load balancer。
 
@@ -305,12 +305,12 @@ Co-Authored-By: Claude Code <noreply@anthropic.com>"
 
 ```go
 type ${Service}ClientConfig struct {
-    Target         jinx.Target
-    Discovery      jinx.DiscoveryClient                                     // 服务 target 必填
-    ClientOptions  []jinx.Option
+    Target         vela.Target
+    Discovery      vela.DiscoveryClient                                     // 服务 target 必填
+    ClientOptions  []vela.Option
     Fallback       ${Service}                                               // 静态 fallback，实现生成接口
-    FallbackFactory func(context.Context, *jinx.Failure, *jinx.Response) (${Service}, error)
-    Availability   func(*jinx.Failure) bool                                 // 默认 jinx.DefaultAvailability
+    FallbackFactory func(context.Context, *vela.Failure, *vela.Response) (${Service}, error)
+    Availability   func(*vela.Failure) bool                                 // 默认 vela.DefaultAvailability
 }
 ```
 
@@ -321,11 +321,11 @@ type ${Service}ClientConfig struct {
 
 ```go
 resp, err := req.Do(ctx)
-var f *jinx.Failure
+var f *vela.Failure
 if err != nil && errors.As(err, &f) && availability(f) { /* 调 fallback 实现对应方法 */ }
 ```
 
-- `FallbackFactory` 接收 `*Failure` 与 `*Response`（传输失败时 `Response` 为 nil）。fallback 实现不被递归包装进主客户端，按原参数直接调用其方法。fallback 方法自身失败：`errors.Join(原始 Failure, fmt.Errorf("jinx: fallback: %w", fbErr))`。
+- `FallbackFactory` 接收 `*Failure` 与 `*Response`（传输失败时 `Response` 为 nil）。fallback 实现不被递归包装进主客户端，按原参数直接调用其方法。fallback 方法自身失败：`errors.Join(原始 Failure, fmt.Errorf("vela: fallback: %w", fbErr))`。
 - 不设 `RecoveryPolicies`/`ReplaceRecoveryPolicies`/context 附加策略（评审裁决 1、3）。
 
 - [ ] **步骤 1：先编写失败的生成客户端测试**

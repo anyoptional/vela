@@ -1,19 +1,19 @@
-# jinx：基于 Eureka 的负载均衡 HTTP 客户端 — 设计
+# vela：基于 Eureka 的负载均衡 HTTP 客户端 — 设计
 
 日期：2026-11-15
 
 ## 意图与动机
 
-jinx 是发布出去给别人用的 Go 库：服务间 HTTP 调用时，按服务名从注册中心发现实例、客户端侧选路、失败自动转移，HTTP 传输基于 go-resty v3。目标用户分两类：
+vela 是发布出去给别人用的 Go 库：服务间 HTTP 调用时，按服务名从注册中心发现实例、客户端侧选路、失败自动转移，HTTP 传输基于 go-resty v3。目标用户分两类：
 
 - go-zero 生态用户：有 `.api` 文件，想要强类型的客户端代码。
 - 任意带 Eureka 的 Go 服务：想要一个运行时负载均衡 HTTP 客户端。
 
-为此 jinx 分三个模块，由 Go workspace 管理。
+为此 vela 分三个模块，由 Go workspace 管理。
 
 ## 目标
 
-1. **core 模块**：eureka 感知的负载均衡 HTTP 客户端。公开 API 完全使用 jinx 自有类型，resty v3 是纯内部依赖，不出现任何公开签名中。
+1. **core 模块**：eureka 感知的负载均衡 HTTP 客户端。公开 API 完全使用 vela 自有类型，resty v3 是纯内部依赖，不出现任何公开签名中。
 2. **eureka 适配器模块**：基于 eureka-go 实现 core 的 `DiscoveryClient` 接口，完成 `eureka.Instance` 到 core `Instance` 的映射。
 3. **goctl 插件模块**：解析 `.api` 文件，为每个服务生成 interface + 默认实现（实现调 core）。
 
@@ -22,7 +22,7 @@ jinx 是发布出去给别人用的 Go 库：服务间 HTTP 调用时，按服�
 - weighted 负载均衡（metadata 权重）
 - 推送式 watch 模型
 - composite discovery（多 DiscoveryClient 组合链，及配套的 `Order()`）
-- 服务注册（eureka-go 已覆盖；jinx 只管发现 + 调用）
+- 服务注册（eureka-go 已覆盖；vela 只管发现 + 调用）
 - 熔断器（circuit breaker）。v1 只有短冷却
 - SSE / multipart / cookie 等 resty 高级功能的再暴露（有需求时按个加）
 
@@ -38,7 +38,7 @@ jinx 是发布出去给别人用的 Go 库：服务间 HTTP 调用时，按服�
 - resty v3：`resty.dev/v3`，当前 v3.0.0-rc.4（stable 未发布）。仅 core 依赖
 - eureka-go v1.0.0：`Client.InstancesOf(name, WithStatus(UP))` 拉内存缓存快照；`Instance` 有 `IPAddr`、`HostName`、`Port.Number`、`SecurePort.Number`、`Metadata`
 - goctl 插件协议：插件二进制经 stdin 接收 `plugin.NewPlugin()`，拿 `Api *spec.ApiSpec`、`Dir`、`Style`；需依赖 `github.com/zeromicro/go-zero/tools/goctl/plugin`（大依赖只压在插件二进制上）
-- 仓库现状：jinx 目录为空仓库（无 .go 文件，无 git），eureka-go 源码在旁目录 `D:/Codes/WorkspaceGo/eureka`
+- 仓库现状：vela 目录为空仓库（无 .go 文件，无 git），eureka-go 源码在旁目录 `D:/Codes/WorkspaceGo/eureka`
 
 ## Approaches（已讨论并选定）
 
@@ -46,7 +46,7 @@ jinx 是发布出去给别人用的 Go 库：服务间 HTTP 调用时，按服�
 |---|---|---|
 | A. 纯 goctl 插件 | 强类型，但受众锁死 go-zero；插件协议跨版本断裂由库承担；resty RC 写进每个生成项目 | 否 |
 | B. 纯运行时库 | 无 go-zero 耦合，但无类型 | 否 |
-| C. 核心库 + 可选插件 | 两类用户都覆盖；goctl 断裂只伤插件；resty RC 只存在于 jinx 内部 | **选** |
+| C. 核心库 + 可选插件 | 两类用户都覆盖；goctl 断裂只伤插件；resty RC 只存在于 vela 内部 | **选** |
 
 子决策（均已选定）：
 
@@ -57,7 +57,7 @@ jinx 是发布出去给别人用的 Go 库：服务间 HTTP 调用时，按服�
 ## 接口（已定）
 
 ```go
-// core 模块，包名待定（jinx）
+// core 模块，包名待定（vela）
 
 type Instance struct {
     ID        string
@@ -114,18 +114,18 @@ type LoadBalancer interface {
 ## 模块布局（已定）
 
 ```
-jinx/                仓库根，go.work
-├── core 源码        module github.com/anyoptional/jinx
-├── eureka/          module github.com/anyoptional/jinx-eureka
-└── goctl/           module github.com/anyoptional/jinx-goctl
+vela/                仓库根，go.work
+├── core 源码        module github.com/anyoptional/vela
+├── eureka/          module github.com/anyoptional/vela-eureka
+└── goctl/           module github.com/anyoptional/vela-goctl
 ```
 
 ## 留给构建者（构建者的调用，未与作者确认）
 
 - **日志**：core 用标准库 `slog`（Go 1.25 标准），`WithLogger` 可注入；eureka adapter 做 logr→slog 桥接。
-- **配置面**：`New(discovery, opts...)`，选项：`WithLoadBalancer`（缺省 = 内部 round-robin）、`WithTimeout`（单次尝试超时；总预算走 ctx deadline）、`WithMaxAttempts`、`WithCooldown`（默认 10s）、`WithLogger`、`WithHTTPClient`（自定义 `*http.Client`，覆盖 mTLS 证书等场景；自定义 CA 可用 `SSL_CERT_FILE`、代理走环境变量）。User-Agent 硬编码 `jinx`，单请求用 `SetHeader` 覆盖。
+- **配置面**：`New(discovery, opts...)`，选项：`WithLoadBalancer`（缺省 = 内部 round-robin）、`WithTimeout`（单次尝试超时；总预算走 ctx deadline）、`WithMaxAttempts`、`WithCooldown`（默认 10s）、`WithLogger`、`WithHTTPClient`（自定义 `*http.Client`，覆盖 mTLS 证书等场景；自定义 CA 可用 `SSL_CERT_FILE`、代理走环境变量）。User-Agent 硬编码 `vela`，单请求用 `SetHeader` 覆盖。
 - **Request 构建器**：`NewRequest(serviceID, method, path string)`、`SetPathParam`、`SetQueryParam`、`SetHeader`、`SetBody`（JSON）、`SetResult`、`Do(ctx)`。**Do 契约**：收到任何 HTTP 响应（含 4xx/5xx）都返回非 nil Response；非 2xx 时 error 非 nil，携带状态码 + 有界 body 摘录，完整 body 在 `Response.Body`，调用方自行解码（无 `SetError`）。
 - **Response**：`{ StatusCode int, Body []byte }`，两个字段。
-- **错误类型目录**（两个公开类型）：`ErrNoInstances`（sentinel，含 discovery 为空与过滤后为空）；`*TransportError`（resty→jinx 边界适配器，`Unwrap` 只暴露消毒后的 cause）。发现失败 = `fmt.Errorf("discover %q: %w", ...)`；重试耗尽 = 最后一次尝试的错误 + 尝试次数入 message。
+- **错误类型目录**（两个公开类型）：`ErrNoInstances`（sentinel，含 discovery 为空与过滤后为空）；`*TransportError`（resty→vela 边界适配器，`Unwrap` 只暴露消毒后的 cause）。发现失败 = `fmt.Errorf("discover %q: %w", ...)`；重试耗尽 = 最后一次尝试的错误 + 尝试次数入 message。
 - **插件参数**：零参数。
 - **测试策略**：单元 + `-race` + live 集成测试（对照 eureka-go 的 `live_integration_test.go` 模式，环境变量开关）。

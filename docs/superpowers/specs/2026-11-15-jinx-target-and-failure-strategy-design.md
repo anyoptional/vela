@@ -1,4 +1,4 @@
-# jinx Target 与故障策略——设计方案（评审修订版）
+# vela Target 与故障策略——设计方案（评审修订版）
 
 日期：2026-11-15
 
@@ -6,7 +6,7 @@
 
 ## 目标与背景
 
-围绕显式请求目标和可组合的故障处理，重新设计 jinx 草稿版客户端。客户端既能通过服务发现和负载均衡调用具名服务，也能直接访问配置的 URL。生成的强类型客户端需要支持静态 fallback 实现和 fallback 工厂，同时允许应用编写比 `fallbackOnError` 布尔开关更丰富的错误处理逻辑。
+围绕显式请求目标和可组合的故障处理，重新设计 vela 草稿版客户端。客户端既能通过服务发现和负载均衡调用具名服务，也能直接访问配置的 URL。生成的强类型客户端需要支持静态 fallback 实现和 fallback 工厂，同时允许应用编写比 `fallbackOnError` 布尔开关更丰富的错误处理逻辑。
 
 本设计不保留当前草稿 API 的兼容性。仓库尚未发布，可以调整公开构造函数和请求签名。
 
@@ -21,7 +21,7 @@
 5. **Target 单构造**：`New(Target, opts...)`，不设双构造函数；URL 为空时 `WithDiscovery` 必填。
 6. **Failure 瘦身**：公开 `{Kind, StatusCode, Err}` + `Error()`/`Unwrap()`/`LogValue()`；可观测字段不导出，由内部脱敏格式化器统一处理；摘录上限 512B 为内部常量。
 7. **接缝公开**（作者裁决：实际项目会自定义，全部保留公开）：`Transport` 函数类型 + `WithTransport`；`LoadBalancer`、`AttemptPolicy`、`DiscoveryClient` 公开；fallback 配置在生成层公开。
-8. **继承清单**：`ErrNoInstances` sentinel、resty 错误链消毒（unwrap 链不含 resty 类型）、Do 契约（收到任何响应都返回非 nil Response）、默认值（3 次尝试、5s 单次超时、UA `jinx`）、插件 CLI 零参数、旧 review-focus 测试重映射。
+8. **继承清单**：`ErrNoInstances` sentinel、resty 错误链消毒（unwrap 链不含 resty 类型）、Do 契约（收到任何响应都返回非 nil Response）、默认值（3 次尝试、5s 单次超时、UA `vela`）、插件 CLI 零参数、旧 review-focus 测试重映射。
 
 ## 目标
 
@@ -117,7 +117,7 @@ type Failure struct {
 // 实例 ID、脱敏 endpoint、响应摘录）不导出，由内部格式化器统一脱敏输出。
 // 摘录上限 512B 为内部常量；不得泄漏 URL userinfo 或敏感 query。
 
-var ErrNoInstances = errors.New("jinx: no instances available")
+var ErrNoInstances = errors.New("vela: no instances available")
 ```
 
 - pre-flight 目标/配置错误在构造函数直接返回普通 `error`，不产生 `Failure`。
@@ -135,7 +135,7 @@ var ErrNoInstances = errors.New("jinx: no instances available")
 func DefaultAvailability(f *Failure) bool
 ```
 
-- 应用可替换该判断：生成层提供 `WithXxxAvailability(func(*Failure) bool)` 选项（默认 `jinx.DefaultAvailability`）；core 裸调用方自行写 `errors.As` 分支。
+- 应用可替换该判断：生成层提供 `WithXxxAvailability(func(*Failure) bool)` 选项（默认 `vela.DefaultAvailability`）；core 裸调用方自行写 `errors.As` 分支。
 
 ## 尝试策略（core）
 
@@ -196,7 +196,7 @@ func WithTransport(Transport) Option // 覆盖默认 resty transport
 
 ```go
 resp, err := req.Do(ctx)
-var f *jinx.Failure
+var f *vela.Failure
 if err != nil && errors.As(err, &f) && availability(f) { /* fallback */ }
 ```
 
@@ -206,12 +206,12 @@ if err != nil && errors.As(err, &f) && availability(f) { /* fallback */ }
 
 ```go
 type ${Service}ClientConfig struct {
-    Target         jinx.Target
-    Discovery      jinx.DiscoveryClient      // 服务 target 必填
-    ClientOptions  []jinx.Option
+    Target         vela.Target
+    Discovery      vela.DiscoveryClient      // 服务 target 必填
+    ClientOptions  []vela.Option
     Fallback       ${Service}                // 静态 fallback，实现生成接口
-    FallbackFactory func(context.Context, *jinx.Failure, *jinx.Response) (${Service}, error)
-    Availability   func(*jinx.Failure) bool  // 默认 jinx.DefaultAvailability
+    FallbackFactory func(context.Context, *vela.Failure, *vela.Response) (${Service}, error)
+    Availability   func(*vela.Failure) bool  // 默认 vela.DefaultAvailability
 }
 
 func New${Service}Client(config ${Service}ClientConfig) (${Service}, error)
@@ -220,7 +220,7 @@ func New${Service}Client(config ${Service}ClientConfig) (${Service}, error)
 - 静态 `Fallback` 与 `FallbackFactory` 互斥：同时配置 = 构造错误（评审裁决，明确优于隐式优先级）。
 - `FallbackFactory` 接收 `*Failure` 与 `*Response`（传输失败时 `Response` 为 nil）；一次给全，日后不破坏签名。
 - fallback 实现本身不会被递归包装进主客户端；其方法按原参数直接调用。
-- fallback 方法自身失败：`errors.Join(原始 Failure, fmt.Errorf("jinx: fallback: %w", fbErr))`，两类错误均可分别检查，不设专用错误类型。
+- fallback 方法自身失败：`errors.Join(原始 Failure, fmt.Errorf("vela: fallback: %w", fbErr))`，两类错误均可分别检查，不设专用错误类型。
 - 插件同时生成 `types/<service>_api.go`（复用 goctl `gogen.BuildTypes`，输出与 `goctl api go` 一致）。第三方服务场景只声明如何调用，**不需要先运行 `goctl api go`**——其生成的 server 侧 routes/handler/logic 等代码没有用途。生成文件名为 `<service>_api.go`（service 块名蛇形小写），不同服务的 api 文件生成各自文件；`-dir` 可在模块子目录，types import 路径 = module path + 相对路径 + `/types`（向上查找最近 go.mod）。
 - **Target 元数据来自 api 文件**：`Target.Name` = service 块名（固定契约）；`@server` 注解可带 `url` key（如 `url: "http://orders.test"`），所有组的 url 必须一致、冲突生成期报错，非空即直连模式。生成代码内建 `defaultTarget`，`config.Target` 留作部署期覆盖（零值 Name → 用 api 文件派生的 Target）。
 - 生成方法接收单个请求结构体，字段按 goctl tag 分区：`path` → 路径参数（标量，与 route `:name` 一一对应）、`header` → 请求头（标量）、`form` → GET/DELETE/HEAD/OPTIONS 走 query、其余方法走 `application/x-www-form-urlencoded` body（标量；core 的 `SetFormParam` 与 `SetBody` 互斥）、`json` 或无 tag → JSON body（body 只含 json 字段）。同一请求类型混用 json 与 form 字段 → 生成期报错；json+path+header 混用允许。

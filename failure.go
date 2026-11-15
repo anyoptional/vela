@@ -1,4 +1,4 @@
-package jinx
+package vela
 
 import (
 	"fmt"
@@ -47,7 +47,7 @@ type Failure struct {
 // Error returns a bounded, sanitized failure summary without exposing the cause.
 func (f *Failure) Error() string {
 	if f == nil {
-		return "jinx: <nil failure>"
+		return "vela: <nil failure>"
 	}
 
 	parts := []string{"kind=" + kindName(f.Kind)}
@@ -75,7 +75,7 @@ func (f *Failure) Error() string {
 	if excerpt := boundedExcerpt(f.bodyExcerpt); excerpt != "" {
 		parts = append(parts, "body_excerpt="+strconv.Quote(excerpt))
 	}
-	return "jinx: failure " + strings.Join(parts, " ")
+	return "vela: failure " + strings.Join(parts, " ")
 }
 
 // Unwrap exposes the original cause.

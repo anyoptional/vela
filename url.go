@@ -1,4 +1,4 @@
-package jinx
+package vela
 
 import (
 	"fmt"
@@ -88,7 +88,7 @@ func substitutePathParams(path string, pathParams map[string]string) (string, er
 		name := strings.TrimPrefix(segment, ":")
 		value, ok := pathParams[name]
 		if !ok {
-			return "", fmt.Errorf("jinx: missing path param %q", name)
+			return "", fmt.Errorf("vela: missing path param %q", name)
 		}
 		segments[i] = url.PathEscape(value)
 	}

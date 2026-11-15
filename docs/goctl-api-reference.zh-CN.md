@@ -410,7 +410,7 @@ Swagger 根据请求结构体字段 tag 生成参数。常用映射如下：
 ```api
 type SearchReq {
     Id      int64  `path:"id,range=[1:10000],example=10"`
-    Keyword string `form:"keyword,optional,example=jinx"`
+    Keyword string `form:"keyword,optional,example=vela"`
     Token   string `header:"Authorization"`
 }
 
@@ -445,7 +445,7 @@ go-zero v1.10.1 自带的 Swagger 示例覆盖了全局 `info`、安全定义、
 - [中文完整示例 example_cn.api](https://github.com/zeromicro/go-zero/blob/tools/goctl/v1.10.1/tools/goctl/api/swagger/example/example_cn.api)
 - [英文完整示例 example.api](https://github.com/zeromicro/go-zero/blob/tools/goctl/v1.10.1/tools/goctl/api/swagger/example/example.api)
 
-## 本仓库 `goctl-jinx` 插件的额外限制
+## 本仓库 `goctl-vela` 插件的额外限制
 
 本仓库的 [goctl 插件 README](../goctl/README.md) 说明：插件为每个 handler 生成 typed-client 方法，使用 URL path 参数及请求/响应类型；目前不支持 form/query 参数，并会明确报错。它是一个 goctl 插件，不等同于 goctl 自带的 HTTP server 代码生成器或 Swagger 生成器。
 

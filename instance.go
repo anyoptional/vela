@@ -1,4 +1,4 @@
-package jinx
+package vela
 
 // Instance describes one discovered endpoint for a service.
 type Instance struct {

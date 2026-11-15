@@ -1,4 +1,4 @@
-package jinx
+package vela
 
 import (
 	"bytes"
@@ -86,7 +86,7 @@ func TestRestyTransport_RoundTrip(t *testing.T) {
 	if got.method != http.MethodPost || got.path != "/orders" || got.query != "3" {
 		t.Errorf("request route = %s %s? page=%s", got.method, got.path, got.query)
 	}
-	if got.header != "trace-id" || got.userAgent != "jinx" {
+	if got.header != "trace-id" || got.userAgent != "vela" {
 		t.Errorf("request headers = trace %q, user-agent %q", got.header, got.userAgent)
 	}
 	if got.body != `{"name":"desk"}` {

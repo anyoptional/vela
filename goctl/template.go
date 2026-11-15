@@ -16,7 +16,7 @@ import (
 	"net/http"
 {{if .HasTypes}}
 	types "{{.TypesPackage}}"{{end}}
-	"github.com/anyoptional/jinx"
+	"github.com/anyoptional/vela"
 )
 
 type {{.ServiceType}} interface {
@@ -26,41 +26,41 @@ type {{.ServiceType}} interface {
 }
 
 type {{.ClientType}} struct {
-	c               *jinx.Client
+	c               *vela.Client
 	fallback        {{.ServiceType}}
-	fallbackFactory func(context.Context, *jinx.Failure, *jinx.Response) ({{.ServiceType}}, error)
-	availability    func(*jinx.Failure) bool
+	fallbackFactory func(context.Context, *vela.Failure, *vela.Response) ({{.ServiceType}}, error)
+	availability    func(*vela.Failure) bool
 }
 
 type {{.ClientConfigType}} struct {
-	Target          jinx.Target
-	Discovery       jinx.DiscoveryClient
-	ClientOptions   []jinx.Option
+	Target          vela.Target
+	Discovery       vela.DiscoveryClient
+	ClientOptions   []vela.Option
 	Fallback        {{.ServiceType}}
-	FallbackFactory func(context.Context, *jinx.Failure, *jinx.Response) ({{.ServiceType}}, error)
-	Availability    func(*jinx.Failure) bool
+	FallbackFactory func(context.Context, *vela.Failure, *vela.Response) ({{.ServiceType}}, error)
+	Availability    func(*vela.Failure) bool
 }
 
 // defaultTarget is derived from the api file: the service block name is the
 // service ID and the @server url annotation selects direct mode.
-var defaultTarget = jinx.Target{Name: {{quote .TargetName}}{{if .TargetURL}}, URL: {{quote .TargetURL}}{{end}}}
+var defaultTarget = vela.Target{Name: {{quote .TargetName}}{{if .TargetURL}}, URL: {{quote .TargetURL}}{{end}}}
 
 func {{.Constructor}}(config {{.ClientConfigType}}) ({{.ServiceType}}, error) {
 	if config.Fallback != nil && config.FallbackFactory != nil {
-		return nil, errors.New("jinx: fallback and fallback factory are mutually exclusive")
+		return nil, errors.New("vela: fallback and fallback factory are mutually exclusive")
 	}
 	target := config.Target
 	if target.Name == "" {
 		target = defaultTarget
 	}
-	options := append([]jinx.Option{jinx.WithDiscovery(config.Discovery)}, config.ClientOptions...)
-	client, err := jinx.New(target, options...)
+	options := append([]vela.Option{vela.WithDiscovery(config.Discovery)}, config.ClientOptions...)
+	client, err := vela.New(target, options...)
 	if err != nil {
 		return nil, err
 	}
 	availability := config.Availability
 	if availability == nil {
-		availability = jinx.DefaultAvailability
+		availability = vela.DefaultAvailability
 	}
 	return &{{.ClientType}}{
 		c:               client,
@@ -70,7 +70,7 @@ func {{.Constructor}}(config {{.ClientConfigType}}) ({{.ServiceType}}, error) {
 	}, nil
 }
 
-func (c *{{.ClientType}}) resolveFallback(ctx context.Context, failure *jinx.Failure, response *jinx.Response) ({{.ServiceType}}, bool, error) {
+func (c *{{.ClientType}}) resolveFallback(ctx context.Context, failure *vela.Failure, response *vela.Response) ({{.ServiceType}}, bool, error) {
 	if ctx.Err() != nil || !c.availability(failure) {
 		return nil, false, nil
 	}
@@ -82,10 +82,10 @@ func (c *{{.ClientType}}) resolveFallback(ctx context.Context, failure *jinx.Fai
 		var err error
 		fallback, err = c.fallbackFactory(ctx, failure, response)
 		if err != nil {
-			return nil, true, fmt.Errorf("jinx: fallback factory: %w", err)
+			return nil, true, fmt.Errorf("vela: fallback factory: %w", err)
 		}
 		if fallback == nil {
-			return nil, true, errors.New("jinx: fallback factory returned nil service")
+			return nil, true, errors.New("vela: fallback factory returned nil service")
 		}
 	}
 	return fallback, true, nil
@@ -105,7 +105,7 @@ func (c *{{$.ClientType}}) {{.Name}}(ctx context.Context{{if .RequestType}}, req
 	request.SetResult(&result)
 	response, err := request.Do(ctx)
 	if err != nil {
-		var failure *jinx.Failure
+		var failure *vela.Failure
 		if errors.As(err, &failure) {
 			fallback, used, fallbackErr := c.resolveFallback(ctx, failure, response)
 			if fallbackErr != nil {
@@ -114,7 +114,7 @@ func (c *{{$.ClientType}}) {{.Name}}(ctx context.Context{{if .RequestType}}, req
 			if used {
 				result, fallbackErr := fallback.{{.Name}}(ctx{{if .RequestType}}, req{{end}})
 				if fallbackErr != nil {
-					return nil, errors.Join(err, fmt.Errorf("jinx: fallback: %w", fallbackErr))
+					return nil, errors.Join(err, fmt.Errorf("vela: fallback: %w", fallbackErr))
 				}
 				return result, nil
 			}
@@ -124,7 +124,7 @@ func (c *{{$.ClientType}}) {{.Name}}(ctx context.Context{{if .RequestType}}, req
 	return &result, nil
 	{{else}}response, err := request.Do(ctx)
 	if err != nil {
-		var failure *jinx.Failure
+		var failure *vela.Failure
 		if errors.As(err, &failure) {
 			fallback, used, fallbackErr := c.resolveFallback(ctx, failure, response)
 			if fallbackErr != nil {
@@ -132,7 +132,7 @@ func (c *{{$.ClientType}}) {{.Name}}(ctx context.Context{{if .RequestType}}, req
 			}
 			if used {
 				if fallbackErr := fallback.{{.Name}}(ctx{{if .RequestType}}, req{{end}}); fallbackErr != nil {
-					return errors.Join(err, fmt.Errorf("jinx: fallback: %w", fallbackErr))
+					return errors.Join(err, fmt.Errorf("vela: fallback: %w", fallbackErr))
 				}
 				return nil
 			}
