@@ -1,6 +1,6 @@
 # jinx
 
-jinx 是一个 Go 客户端侧负载均衡 HTTP 库。它通过可插拔接口发现服务实例，为每次请求选择实例，并可在传输错误或服务端错误时切换到其他实例。
+jinx 是一个 Go 客户端侧负载均衡 HTTP 库。它支持通过服务发现访问具名服务，或直接访问配置的 HTTP(S) URL；服务模式下可在实例间故障转移，并提供可定制的尝试策略与结构化故障信息。
 
 仓库使用 Go workspace 管理三个独立模块：
 
@@ -14,32 +14,23 @@ jinx 是一个 Go 客户端侧负载均衡 HTTP 库。它通过可插拔接口�
 
 ## 核心库快速开始
 
-为注册中心实现 `jinx.DiscoveryClient`，再传给 `jinx.New`：
+### 服务发现
+
+服务模式必须提供 `Target.Name` 和 `DiscoveryClient`。名称同时用作服务发现 ID 和逻辑客户端标识：
 
 ```go
-type localDiscovery struct{}
-
-func (localDiscovery) Description() string { return "local" }
-
-func (localDiscovery) Instances(_ context.Context, serviceID string) ([]jinx.Instance, error) {
-	return []jinx.Instance{{
-		ID:        "orders-1",
-		ServiceID: serviceID,
-		Host:      "127.0.0.1",
-		Port:      8080,
-	}}, nil
+func newOrdersClient(discovery jinx.DiscoveryClient) (*jinx.Client, error) {
+	return jinx.New(
+		jinx.Target{Name: "orders"},
+		jinx.WithDiscovery(discovery),
+	)
 }
 
-func (localDiscovery) Services(context.Context) ([]string, error) {
-	return []string{"orders"}, nil
-}
-
-func call(ctx context.Context) error {
-	client := jinx.New(localDiscovery{})
+func getHealth(ctx context.Context, client *jinx.Client) error {
 	var result struct {
 		Status string `json:"status"`
 	}
-	_, err := client.NewRequest("orders", http.MethodGet, "/health").
+	_, err := client.NewRequest(http.MethodGet, "/health").
 		SetResult(&result).
 		Do(ctx)
 	if err != nil {
@@ -50,11 +41,106 @@ func call(ctx context.Context) error {
 }
 ```
 
-`Request` 还支持 path/query 参数、请求头、JSON 请求体和响应结果解码。可通过 `WithMaxAttempts`、`WithTimeout`、`WithCooldown`、`WithHTTPClient` 等选项配置重试和传输行为。
+`DiscoveryClient` 由注册中心或应用自行实现；可通过 `WithLoadBalancer` 配置实例选择器。
+
+### URL 直连
+
+`Target.URL` 非空时，客户端直接访问该绝对 HTTP(S) URL，不需要 discovery，也不会使用负载均衡器。`Target.Name` 在直连模式下仍然必填：
+
+```go
+client, err := jinx.New(jinx.Target{
+	Name: "orders",
+	URL:  "http://127.0.0.1:8080",
+	Path: "/api/v1",
+})
+if err != nil {
+	return err
+}
+
+_, err = client.NewRequest(http.MethodGet, "/health").Do(ctx)
+```
+
+`Target.Path` 会与 base URL 路径和 route path 合并；path 参数由请求构造器编码。目标 URL 不接受 query 或 fragment，查询参数应使用请求构造器设置。直连请求不调用 discovery/load balancer；传输失败后不会切换到服务发现，但可按尝试策略重试同一 URL。
+
+### 请求与故障
+
+`NewRequest(method, path)` 创建请求。请求构造器支持 path/query 参数、请求头、JSON 请求体和响应结果解码。`Do` 返回收到的 HTTP `Response`（包括非 2xx）和错误；错误可通过 `errors.As` 识别为 `*jinx.Failure`：
+
+| 故障类别 | 含义 | 默认可用性故障 |
+| --- | --- | --- |
+| `KindInvalidCall` | 请求构造、编码或策略错误 | 否 |
+| `KindDiscovery` | 注册中心错误或无实例 | 是 |
+| `KindTransport` | 连接、传输、响应读取或单次尝试超时 | 是 |
+| `KindStatus` | 非 2xx HTTP 状态 | 仅最终 5xx |
+| `KindDecode` | 2xx 响应解码失败 | 否 |
+| `KindCanceled` | 调用方取消或整体 deadline 到期 | 否 |
+
+```go
+var failure *jinx.Failure
+if errors.As(err, &failure) {
+	slog.Error("请求失败", "kind", failure.Kind, "status", failure.StatusCode)
+}
+```
+
+`Failure` 的 `Unwrap` 保留根因。core 包提供 `jinx.DefaultAvailability` 谓词；强类型 fallback 动作由 goctl 生成层负责，参见 [goctl 插件指南](./goctl/README.zh-CN.md)。
+
+## 尝试策略与超时
+
+默认最多尝试 3 次，每次尝试默认超时 5 秒。默认策略只对传输故障和 5xx 重试或故障转移；服务模式优先切换到尚未尝试的实例，直连模式只重试同一 endpoint。`WithMaxAttempts` 和 `WithTimeout` 可覆盖这些上限。
+`WithTimeout` 限制单次尝试；调用方 context 的取消或整体 deadline 会归类为 `KindCanceled`，不会继续尝试或启动 fallback。
+
+`WithAttemptPolicies` 接收 `AttemptPolicy` 函数切片，并**整体替换**内置默认策略链。策略按切片顺序运行；第一个返回非 `AttemptNext` 的策略决定动作。下面的例子只重试 429；由于默认策略已被替换，其他故障不会继承默认重试/故障转移：
+
+```go
+retry429 := func(
+	_ context.Context,
+	failure *jinx.Failure,
+	_ jinx.AttemptState,
+) (jinx.AttemptAction, error) {
+	if failure.Kind == jinx.KindStatus && failure.StatusCode == http.StatusTooManyRequests {
+		return jinx.AttemptRetrySameEndpoint, nil
+	}
+	return jinx.AttemptNext, nil
+}
+
+client, err := jinx.New(
+	jinx.Target{Name: "orders", URL: "http://127.0.0.1:8080"},
+	jinx.WithMaxAttempts(3),
+	jinx.WithAttemptPolicies([]jinx.AttemptPolicy{retry429}),
+)
+```
+
+可用动作包括 `AttemptRetrySameEndpoint`、`AttemptFailover` 和 `AttemptStop`；`AttemptNext` 将决策交给下一项策略。core 仍会强制执行尝试次数、调用取消和请求体可重放性等约束。空策略切片表示不再尝试。
+自定义策略也可以针对 4xx/429 或 `KindDecode` 决定重试、故障转移或停止；这些类别默认不会重试。尝试策略只控制 core 请求尝试，不会自动改变生成客户端的 fallback 可用性判断。
+
+## 实例冷却与 Transport
+
+默认冷却时长为 10 秒，可用 `WithCooldown` 配置；负值关闭冷却：
+
+```go
+client, err := jinx.New(target,
+	jinx.WithDiscovery(discovery),
+	jinx.WithCooldown(10*time.Second),
+)
+```
+
+冷却仅由传输错误触发，5xx 不会让实例进入冷却。冷却用于降低实例优先级，不是永久禁用；如果所有候选实例都处于冷却，客户端仍会尝试它们。
+
+公开的 `Transport` 接缝可以替换整个 HTTP 往返；`WithHTTPClient` 则只替换底层 `http.Client`（例如代理或 TLS 配置）：
+
+```go
+roundTrip := func(ctx context.Context, req *http.Request) (*http.Response, error) {
+	return http.DefaultTransport.RoundTrip(req.WithContext(ctx))
+}
+
+client, err := jinx.New(target, jinx.WithTransport(roundTrip))
+```
+
+自定义 transport 应返回响应及错误；响应体由 jinx 读取并关闭。
 
 ## 接入 Eureka
 
-配置并启动 `eureka-go` 客户端，再将其适配给 jinx。Eureka 应用名必须与传给 `NewRequest` 的服务 ID 一致。
+配置并启动 `eureka-go` 客户端，再将其适配给 jinx。Eureka 应用名必须与 `Target.Name` 中的服务 ID 一致：
 
 ```go
 cfg := eureka.DefaultConfig()
@@ -83,7 +169,10 @@ defer func() {
 	}
 }()
 
-client := jinx.New(eurekaadapter.New(eurekaClient))
+client, err := jinx.New(
+	jinx.Target{Name: "orders"},
+	jinx.WithDiscovery(eurekaadapter.New(eurekaClient)),
+)
 ```
 
 适配器只暴露状态为 `UP` 且至少有一个启用端口的实例。完整示例和真实环境集成测试说明见 [Eureka 适配指南](./eureka/README.zh-CN.md)。
@@ -104,7 +193,7 @@ goctl api go -api order.api -dir .
 goctl api plugin --plugin goctl-jinx -api order.api -dir .
 ```
 
-插件会生成包含接口和 `jinx.Client` 实现的 `client.go`。service 块名会作为服务发现 ID，模块的 `go.mod` 用于定位 `internal/types`。遇到 form/query 参数时会明确报错，不会静默丢弃。详见 [goctl 插件指南](./goctl/README.zh-CN.md)。
+插件会生成包含服务接口、强类型客户端配置和 fallback 分派的 `client.go`。详细的服务发现、URL 直连、静态 fallback、fallback 工厂及自定义可用性示例见 [goctl 插件指南](./goctl/README.zh-CN.md)。
 
 ## 开发
 
