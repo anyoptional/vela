@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 const (
@@ -136,15 +137,20 @@ func WithConnectTimeout(connect time.Duration) Option {
 	}
 }
 
-// newDefaultHTTPClient builds the default *http.Client. When connectTimeout
-// is positive, the transport dialer enforces it as a connect timeout.
+// newDefaultHTTPClient builds the default *http.Client. Every request is
+// traced by otelhttp (OpenTelemetry instrumentation): it starts a client
+// span per HTTP call, propagates the trace context to the server, and uses
+// the global TracerProvider/Propagators. When connectTimeout is positive,
+// the wrapped transport dialer enforces it as a connect timeout.
 func newDefaultHTTPClient(connectTimeout time.Duration) *http.Client {
 	httpClient := &http.Client{}
+	var base http.RoundTripper = http.DefaultTransport
 	if connectTimeout > 0 {
-		httpClient.Transport = &http.Transport{
+		base = &http.Transport{
 			DialContext: (&net.Dialer{Timeout: connectTimeout}).DialContext,
 		}
 	}
+	httpClient.Transport = otelhttp.NewTransport(base)
 	return httpClient
 }
 

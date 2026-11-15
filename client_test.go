@@ -5,8 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/go-logr/logr"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"strings"
 	"sync"
@@ -728,20 +732,18 @@ func TestNew_ConnectTimeoutDefaultClient(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
-	transport, ok := client.cfg.httpClient.Transport.(*http.Transport)
-	if !ok || transport == nil {
-		t.Fatalf("default httpClient transport = %T, want *http.Transport with dial timeout", client.cfg.httpClient.Transport)
-	}
-	if transport.DialContext == nil {
-		t.Error("default transport has no DialContext")
+	// The default client is always wrapped by otelhttp; the dial timeout
+	// lives on the wrapped transport and cannot be inspected structurally.
+	if _, ok := client.cfg.httpClient.Transport.(*otelhttp.Transport); !ok {
+		t.Fatalf("default httpClient transport = %T, want *otelhttp.Transport", client.cfg.httpClient.Transport)
 	}
 
 	noConnect, err := New(Target{Name: "orders", URL: "http://orders.test"}, WithConnectTimeout(0))
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
-	if noConnect.cfg.httpClient.Transport != nil {
-		t.Errorf("transport = %T, want nil without connect timeout", noConnect.cfg.httpClient.Transport)
+	if _, ok := noConnect.cfg.httpClient.Transport.(*otelhttp.Transport); !ok {
+		t.Fatalf("default httpClient transport = %T, want *otelhttp.Transport", noConnect.cfg.httpClient.Transport)
 	}
 }
 
@@ -756,5 +758,32 @@ func TestWithConnectTimeout_IgnoredWithCustomHTTPClient(t *testing.T) {
 	}
 	if client.cfg.httpClient != custom {
 		t.Error("custom httpClient was replaced")
+	}
+}
+
+func TestDefaultClient_PropagatesTraceContext(t *testing.T) {
+	previous := otel.GetTextMapPropagator()
+	otel.SetTextMapPropagator(propagation.TraceContext{})
+	t.Cleanup(func() { otel.SetTextMapPropagator(previous) })
+
+	const traceparent = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
+	var gotTraceparent string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotTraceparent = r.Header.Get("traceparent")
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(server.Close)
+
+	ctx := otel.GetTextMapPropagator().Extract(context.Background(), propagation.MapCarrier{"traceparent": traceparent})
+
+	client, err := New(Target{Name: "orders", URL: server.URL})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	if _, err := client.NewRequest(http.MethodGet, "/health").Do(ctx); err != nil {
+		t.Fatalf("Do() error = %v", err)
+	}
+	if gotTraceparent != traceparent {
+		t.Errorf("server received traceparent = %q, want %q", gotTraceparent, traceparent)
 	}
 }

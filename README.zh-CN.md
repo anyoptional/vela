@@ -85,6 +85,10 @@ if errors.As(err, &failure) {
 
 `Failure` 的 `Unwrap` 保留根因。core 包提供 `vela.DefaultAvailability` 谓词；强类型 fallback 动作由 goctl 生成层负责，参见 [goctl 插件指南](./goctl/README.zh-CN.md)。
 
+## 可观测性（OpenTelemetry）
+
+默认 `http.Client` 由 `otelhttp.NewTransport` 包装：每次尝试产生一个 client span，W3C trace context 自动注入出站请求，使用全局 `TracerProvider`/`Propagators`（未注册时 no-op）。自定义 `WithHTTPClient`/`WithTransport` 时自行接 otel。
+
 ## 尝试策略与超时
 
 默认最多尝试 3 次，每次尝试默认超时 5 秒。默认策略只对传输故障和 5xx 重试或故障转移；服务模式优先切换到尚未尝试的实例，直连模式只重试同一 endpoint。`WithMaxAttempts` 和 `WithTimeout` 可覆盖这些上限。

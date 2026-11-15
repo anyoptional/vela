@@ -193,6 +193,12 @@ func WithTransport(Transport) Option // 覆盖默认 resty transport
 - 三个模块统一使用 go-logr；core 默认 `logr.FromSlogHandler(slog.Default().Handler())` 输出到 stdout，`WithLogger(logr.Logger)` 可注入。
 - 不自定义 logger（如无必要）：eureka 适配器沿用 eureka-go 自带 logr 默认（stdout），插件无日志输出（错误走 stderr 协议通道）。resty 的 Logger 接口由最小 logr 桥接（必要适配，非自定义实现）。
 
+### 可观测性（OpenTelemetry）
+
+- 默认 `http.Client` 由 `otelhttp.NewTransport` 包装：每次 HTTP 调用产生一个 client span（每尝试一个），W3C trace context 自动注入出站请求，span 为调用方 span 的子级；使用全局 `TracerProvider`/`Propagators`（未注册时 no-op，零配置开销）。
+- `WithHTTPClient`/`WithTransport` 注入后由调用方自行接 otel（vela 不替自定义往返加插桩）。
+- resty v3 rc.4 无内置 otel；官方推荐即 `otelhttp.NewTransport`，vela 按此接入，不引第三方 resty 插桩库。
+
 ### 超时分层
 
 - **HTTP 客户端侧**：`WithTimeout` = 客户端默认单次尝试超时（整程：connect + 发送 + 读响应）；`WithConnectTimeout` = 默认 `http.Client` 的 dial 超时（Go 无逐字节 read timeout，整程由 ctx deadline 承担）。`WithConnectTimeout` 只在默认 `http.Client` 生效；`WithHTTPClient`/`WithTransport` 注入后 dial 行为归调用方。
