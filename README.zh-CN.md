@@ -192,7 +192,7 @@ go build -o goctl-jinx .
 goctl api plugin --plugin goctl-jinx -api order.api -dir .
 ```
 
-插件会生成 `client.go`（服务接口、强类型客户端配置、fallback 分派）和 `types/types.go`（导出子包，复用 goctl 的类型生成器）。预期用法是契约模块：api 文件放在独立模块里生成代码，消费方 import 该模块与 `<module>/types`。详细的服务发现、URL 直连、静态 fallback、fallback 工厂及自定义可用性示例见 [goctl 插件指南](./goctl/README.zh-CN.md)。
+插件会生成 `<service>_api.go`（服务接口、强类型客户端配置、fallback 分派，文件名 = service 块名蛇形小写）和 `types/<service>_api.go`（导出子包，复用 goctl 的类型生成器）；`-dir` 可在模块子目录，types import 路径 = module path + 相对路径 + `/types`。预期用法是契约模块：api 文件放在独立模块里生成代码，消费方 import 该模块与 `<module>/types`。详细的服务发现、URL 直连、静态 fallback、fallback 工厂及自定义可用性示例见 [goctl 插件指南](./goctl/README.zh-CN.md)。
 
 ## 开发
 

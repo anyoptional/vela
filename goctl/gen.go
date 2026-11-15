@@ -27,6 +27,7 @@ type clientTemplateData struct {
 	ClientConfigType string
 	Constructor      string
 	TypesPackage     string
+	FileBase         string
 	HasTypes         bool
 	Routes           []routeTemplateData
 }
@@ -79,6 +80,7 @@ func gen(api *spec.ApiSpec, dir string) error {
 		ClientType:       stringx.From(serviceType).Untitle() + "Client",
 		ClientConfigType: serviceType + "ClientConfig",
 		Constructor:      "New" + serviceType + "Client",
+		FileBase:         snakeCase(api.Service.Name),
 	}
 	if !token.IsIdentifier(data.ClientType) || !token.IsIdentifier(data.ClientConfigType) || !token.IsIdentifier(data.Constructor) {
 		return fmt.Errorf("jinx-goctl: invalid generated client name for service %q", api.Service.Name)
@@ -104,7 +106,7 @@ func gen(api *spec.ApiSpec, dir string) error {
 			return err
 		}
 		data.TypesPackage = typesPackage
-		if err := writeTypesFile(api, dir); err != nil {
+		if err := writeTypesFile(api, dir, data.FileBase); err != nil {
 			return err
 		}
 	}
@@ -117,19 +119,20 @@ func gen(api *spec.ApiSpec, dir string) error {
 	if err != nil {
 		return fmt.Errorf("jinx-goctl: format generated client: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "client.go"), formatted, 0o644); err != nil {
-		return fmt.Errorf("jinx-goctl: write client.go: %w", err)
+	clientFile := filepath.Join(dir, data.FileBase+".go")
+	if err := os.WriteFile(clientFile, formatted, 0o644); err != nil {
+		return fmt.Errorf("jinx-goctl: write %s: %w", clientFile, err)
 	}
 	return nil
 }
 
-// writeTypesFile generates types/types.go from the API spec's type
+// writeTypesFile generates types/<fileBase>.go from the API spec's type
 // declarations, reusing goctl's own type generator so the output matches
 // goctl conventions exactly. The types subpackage is exported (not
 // internal/): contract modules are imported by other modules, and Go's
 // internal rule would forbid importing internal/types from outside.
 // The plugin is self-contained: callers do not need to run "goctl api go".
-func writeTypesFile(api *spec.ApiSpec, dir string) error {
+func writeTypesFile(api *spec.ApiSpec, dir, fileBase string) error {
 	typesDir := filepath.Join(dir, "types")
 	if err := os.MkdirAll(typesDir, 0o755); err != nil {
 		return fmt.Errorf("jinx-goctl: create types directory: %w", err)
@@ -142,8 +145,9 @@ func writeTypesFile(api *spec.ApiSpec, dir string) error {
 	if err != nil {
 		return fmt.Errorf("jinx-goctl: format generated types: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(typesDir, "types.go"), formatted, 0o644); err != nil {
-		return fmt.Errorf("jinx-goctl: write types.go: %w", err)
+	typesFile := filepath.Join(typesDir, fileBase+".go")
+	if err := os.WriteFile(typesFile, formatted, 0o644); err != nil {
+		return fmt.Errorf("jinx-goctl: write %s: %w", typesFile, err)
 	}
 	return nil
 }
@@ -285,12 +289,37 @@ func structMembers(requestType spec.Type) []spec.Member {
 	}
 }
 
+// deriveTypesPkg resolves the import path of the generated types package.
+// It walks upward from dir to the nearest go.mod: the module root
+// contributes the module path, and the relative path from the module root
+// to dir becomes the package suffix, so generation works in subdirectories
+// of the module too.
 func deriveTypesPkg(dir string) (string, error) {
-	goModPath := filepath.Join(dir, "go.mod")
-	content, err := os.ReadFile(goModPath)
+	absDir, err := filepath.Abs(dir)
 	if err != nil {
-		return "", fmt.Errorf("jinx-goctl: cannot derive types package from %s: %w", dir, err)
+		return "", fmt.Errorf("jinx-goctl: resolve output directory %s: %w", dir, err)
 	}
+	for current := absDir; ; current = filepath.Dir(current) {
+		content, err := os.ReadFile(filepath.Join(current, "go.mod"))
+		if err == nil {
+			modulePath := modulePathFrom(content)
+			if modulePath == "" {
+				break
+			}
+			rel, relErr := filepath.Rel(current, absDir)
+			if relErr != nil {
+				break
+			}
+			return path.Join(modulePath, filepath.ToSlash(rel), "types"), nil
+		}
+		if filepath.Dir(current) == current {
+			break
+		}
+	}
+	return "", fmt.Errorf("jinx-goctl: cannot derive types package from %s", dir)
+}
+
+func modulePathFrom(content []byte) string {
 	for line := range strings.SplitSeq(string(content), "\n") {
 		line, _, _ = strings.Cut(line, "//")
 		fields := strings.Fields(line)
@@ -298,15 +327,11 @@ func deriveTypesPkg(dir string) (string, error) {
 			continue
 		}
 		if len(fields) != 2 {
-			break
+			return ""
 		}
-		modulePath := strings.Trim(fields[1], `"`)
-		if modulePath != "" {
-			return path.Join(modulePath, "types"), nil
-		}
-		break
+		return strings.Trim(fields[1], `"`)
 	}
-	return "", fmt.Errorf("jinx-goctl: cannot derive types package from %s", dir)
+	return ""
 }
 
 func directoryPackage(dir string) (string, error) {
@@ -354,4 +379,8 @@ func quoted(value string) string {
 
 func toCamel(value string) string {
 	return stringx.From(strings.ReplaceAll(value, "-", "_")).ToCamel()
+}
+
+func snakeCase(value string) string {
+	return strings.ToLower(strings.ReplaceAll(value, "-", "_"))
 }

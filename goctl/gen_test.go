@@ -24,9 +24,9 @@ func TestGenerate_Golden(t *testing.T) {
 		t.Fatalf("gen(): %v", err)
 	}
 
-	got, err := os.ReadFile(filepath.Join(dir, "client.go"))
+	got, err := os.ReadFile(filepath.Join(dir, "order_api.go"))
 	if err != nil {
-		t.Fatalf("ReadFile(client.go): %v", err)
+		t.Fatalf("ReadFile(order_api.go): %v", err)
 	}
 	want, err := os.ReadFile(filepath.Join("testdata", "client.golden"))
 	if err != nil {
@@ -67,9 +67,9 @@ func TestGenerate_DeleteHasNoBody(t *testing.T) {
 	if err := gen(api, dir); err != nil {
 		t.Fatalf("gen(): %v", err)
 	}
-	generated, err := os.ReadFile(filepath.Join(dir, "client.go"))
+	generated, err := os.ReadFile(filepath.Join(dir, "order_api.go"))
 	if err != nil {
-		t.Fatalf("ReadFile(client.go): %v", err)
+		t.Fatalf("ReadFile(order_api.go): %v", err)
 	}
 	source := string(generated)
 	start := strings.Index(source, "func (c *orderApiClient) GetOrder")
@@ -97,9 +97,9 @@ func TestGenerate_MatchesDirectoryPackage(t *testing.T) {
 	if err := gen(api, dir); err != nil {
 		t.Fatalf("gen(): %v", err)
 	}
-	generated, err := os.ReadFile(filepath.Join(dir, "client.go"))
+	generated, err := os.ReadFile(filepath.Join(dir, "order_api.go"))
 	if err != nil {
-		t.Fatalf("ReadFile(client.go): %v", err)
+		t.Fatalf("ReadFile(order_api.go): %v", err)
 	}
 	if !bytes.HasPrefix(generated, []byte("package app\n")) {
 		t.Errorf("generated package = %q, want app", strings.SplitN(string(generated), "\n", 2)[0])
@@ -130,6 +130,22 @@ func TestDeriveTypesPkg(t *testing.T) {
 		}
 		if got != "example.com/svc/types" {
 			t.Errorf("deriveTypesPkg() = %q, want example.com/svc/types", got)
+		}
+	})
+
+	t.Run("walks up to module root", func(t *testing.T) {
+		root := t.TempDir()
+		writeModuleFile(t, root)
+		dir := filepath.Join(root, "api", "orders")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("MkdirAll(): %v", err)
+		}
+		got, err := deriveTypesPkg(dir)
+		if err != nil {
+			t.Fatalf("deriveTypesPkg(): %v", err)
+		}
+		if got != "example.com/svc/api/orders/types" {
+			t.Errorf("deriveTypesPkg() = %q, want example.com/svc/api/orders/types", got)
 		}
 	})
 
@@ -179,7 +195,7 @@ func prepareGeneratedClientModule(t *testing.T) string {
 	if err := gen(api, dir); err != nil {
 		t.Fatalf("gen(): %v", err)
 	}
-	typesSource, err := os.ReadFile(filepath.Join(dir, "types", "types.go"))
+	typesSource, err := os.ReadFile(filepath.Join(dir, "types", "order_api.go"))
 	if err != nil {
 		t.Fatalf("ReadFile(types.go): %v", err)
 	}
