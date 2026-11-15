@@ -188,6 +188,12 @@ func WithTransport(Transport) Option // 覆盖默认 resty transport
 
 - 与 `WithHTTPClient` 分工：前者替换整个往返（测试、拦截），后者只替换底层 `http.Client`（TLS/代理）。
 
+### 超时分层
+
+- **HTTP 客户端侧**：`WithTimeout` = 客户端默认单次尝试超时（整程：connect + 发送 + 读响应）；`WithConnectTimeout` = 默认 `http.Client` 的 dial 超时（Go 无逐字节 read timeout，整程由 ctx deadline 承担）。`WithConnectTimeout` 只在默认 `http.Client` 生效；`WithHTTPClient`/`WithTransport` 注入后 dial 行为归调用方。
+- **Request 侧**：`Request.SetTimeout(d)` 覆盖单次尝试超时；`d <= 0` 继承客户端默认。
+- 每尝试超时经 `context.WithTimeout` 派生自调用方 ctx（子 deadline 自动取小），调用方总 deadline 贯穿全部尝试与转移；resty 客户端不再设自身超时（避免 request 放宽被客户端默认卡死），deadline 全权由 attemptCtx 承担。
+
 ## 生成层的强类型 fallback
 
 ### 触发与布线（评审裁决 3）

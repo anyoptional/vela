@@ -86,7 +86,15 @@ if errors.As(err, &failure) {
 ## 尝试策略与超时
 
 默认最多尝试 3 次，每次尝试默认超时 5 秒。默认策略只对传输故障和 5xx 重试或故障转移；服务模式优先切换到尚未尝试的实例，直连模式只重试同一 endpoint。`WithMaxAttempts` 和 `WithTimeout` 可覆盖这些上限。
-`WithTimeout` 限制单次尝试；调用方 context 的取消或整体 deadline 会归类为 `KindCanceled`，不会继续尝试或启动 fallback。
+
+超时分两层，request 默认继承 HTTP 客户端侧配置：
+
+- **HTTP 客户端侧**：`WithTimeout` 设置客户端默认的单次尝试超时（整程上限：connect + 发送 + 读响应）；`WithConnectTimeout` 设置默认 `http.Client` 的 dial（连接建立）超时——Go 没有逐字节 read timeout，整程超时由 ctx deadline 承担。
+- **Request 侧**：`Request.SetTimeout(d)` 覆盖本次请求的单次尝试超时；`d <= 0` 回退继承客户端默认（`WithTimeout`）。
+
+每尝试超时经 `context.WithTimeout` 派生自调用方 ctx：子 deadline 自动取两者较小值，调用方总 deadline 贯穿全部尝试与实例转移（超时传递最佳实践）。调用方 context 的取消或整体 deadline 归类为 `KindCanceled`，不继续尝试、不启动 fallback；单次尝试超时归类为 `KindTransport`。
+
+注意：`WithConnectTimeout` 只作用于默认 `http.Client`；传入 `WithHTTPClient` 或 `WithTransport` 后 dial 行为由调用方自管。
 
 `WithAttemptPolicies` 接收 `AttemptPolicy` 函数切片，并**整体替换**内置默认策略链。策略按切片顺序运行；第一个返回非 `AttemptNext` 的策略决定动作。下面的例子只重试 429；由于默认策略已被替换，其他故障不会继承默认重试/故障转移：
 

@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"time"
 )
 
 // Request builds and executes a request to the configured target.
@@ -21,6 +22,7 @@ type Request struct {
 	body       any
 	form       map[string]string
 	result     any
+	timeout    time.Duration
 	c          *Client
 }
 
@@ -66,6 +68,21 @@ func (r *Request) SetFormParam(name, value string) *Request {
 	}
 	r.form[name] = value
 	return r
+}
+
+// SetTimeout overrides the client-side default timeout for this request.
+// A non-positive value falls back to the client default (WithTimeout).
+func (r *Request) SetTimeout(timeout time.Duration) *Request {
+	r.timeout = timeout
+	return r
+}
+
+// effectiveTimeout resolves the per-attempt timeout for this request.
+func (r *Request) effectiveTimeout() time.Duration {
+	if r.timeout > 0 {
+		return r.timeout
+	}
+	return r.c.cfg.perAttemptTimeout
 }
 
 // SetResult sets the destination for a successful response body.
@@ -203,7 +220,7 @@ func (r *Request) Do(ctx context.Context) (*Response, error) {
 		if body != nil {
 			bodyReader = bytes.NewReader(body)
 		}
-		attemptCtx, cancelAttempt := context.WithTimeout(ctx, client.cfg.perAttemptTimeout)
+		attemptCtx, cancelAttempt := context.WithTimeout(ctx, r.effectiveTimeout())
 		httpRequest, err := http.NewRequestWithContext(attemptCtx, r.method, targetURL, bodyReader)
 		if err != nil {
 			cancelAttempt()

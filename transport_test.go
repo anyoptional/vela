@@ -2,6 +2,7 @@ package vela
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"log/slog"
@@ -106,12 +107,14 @@ func TestRestyTransport_Timeout(t *testing.T) {
 		perAttemptTimeout: 10 * time.Millisecond,
 		httpClient:        server.Client(),
 	}, slog.Default())
-	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, server.URL, nil)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Millisecond)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, server.URL, nil)
 	if err != nil {
 		t.Fatalf("NewRequestWithContext(): %v", err)
 	}
 
-	_, err = transport(t.Context(), req)
+	_, err = transport(ctx, req)
 	if err == nil {
 		t.Fatal("transport() error = nil, want timeout error")
 	}

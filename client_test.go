@@ -675,3 +675,86 @@ func TestDo_FormAndBodyConflict(t *testing.T) {
 		t.Fatalf("Do() error = %v, want KindInvalidCall", err)
 	}
 }
+
+func TestRequest_SetTimeoutOverridesClient(t *testing.T) {
+	var gotDeadline time.Time
+	client, err := New(Target{Name: "orders", URL: "http://orders.test"},
+		WithTimeout(5*time.Second),
+		WithTransport(func(ctx context.Context, _ *http.Request) (*http.Response, error) {
+			deadline, ok := ctx.Deadline()
+			if !ok {
+				t.Error("attempt context has no deadline")
+			}
+			gotDeadline = deadline
+			return &http.Response{StatusCode: http.StatusNoContent, Header: make(http.Header), Body: http.NoBody}, nil
+		}))
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	start := time.Now()
+	if _, err := client.NewRequest(http.MethodGet, "/orders").SetTimeout(100 * time.Millisecond).Do(t.Context()); err != nil {
+		t.Fatalf("Do() error = %v", err)
+	}
+	if remain := time.Until(gotDeadline); remain < 50*time.Millisecond || remain > 150*time.Millisecond {
+		t.Errorf("attempt deadline in %v from start, want ~100ms", gotDeadline.Sub(start))
+	}
+}
+
+func TestRequest_SetTimeoutZeroInheritsClient(t *testing.T) {
+	var gotDeadline time.Time
+	client, err := New(Target{Name: "orders", URL: "http://orders.test"},
+		WithTimeout(2*time.Second),
+		WithTransport(func(ctx context.Context, _ *http.Request) (*http.Response, error) {
+			deadline, _ := ctx.Deadline()
+			gotDeadline = deadline
+			return &http.Response{StatusCode: http.StatusNoContent, Header: make(http.Header), Body: http.NoBody}, nil
+		}))
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	start := time.Now()
+	if _, err := client.NewRequest(http.MethodGet, "/orders").SetTimeout(0).Do(t.Context()); err != nil {
+		t.Fatalf("Do() error = %v", err)
+	}
+	if remain := time.Until(gotDeadline); remain < 1500*time.Millisecond || remain > 2500*time.Millisecond {
+		t.Errorf("attempt deadline in %v from start, want ~2s client default", gotDeadline.Sub(start))
+	}
+}
+
+func TestNew_ConnectTimeoutDefaultClient(t *testing.T) {
+	client, err := New(Target{Name: "orders", URL: "http://orders.test"}, WithConnectTimeout(50*time.Millisecond))
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	transport, ok := client.cfg.httpClient.Transport.(*http.Transport)
+	if !ok || transport == nil {
+		t.Fatalf("default httpClient transport = %T, want *http.Transport with dial timeout", client.cfg.httpClient.Transport)
+	}
+	if transport.DialContext == nil {
+		t.Error("default transport has no DialContext")
+	}
+
+	noConnect, err := New(Target{Name: "orders", URL: "http://orders.test"}, WithConnectTimeout(0))
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	if noConnect.cfg.httpClient.Transport != nil {
+		t.Errorf("transport = %T, want nil without connect timeout", noConnect.cfg.httpClient.Transport)
+	}
+}
+
+func TestWithConnectTimeout_IgnoredWithCustomHTTPClient(t *testing.T) {
+	custom := &http.Client{Timeout: 3 * time.Second}
+	client, err := New(Target{Name: "orders", URL: "http://orders.test"},
+		WithConnectTimeout(50*time.Millisecond),
+		WithHTTPClient(custom),
+	)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	if client.cfg.httpClient != custom {
+		t.Error("custom httpClient was replaced")
+	}
+}

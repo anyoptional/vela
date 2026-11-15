@@ -44,7 +44,6 @@ func newRestyTransport(cfg config, logger *slog.Logger) Transport {
 		httpClient = &http.Client{}
 	}
 	client := resty.NewWithClient(httpClient).
-		SetTimeout(cfg.perAttemptTimeout).
 		SetRetryCount(0).
 		SetHeader("User-Agent", "vela").
 		SetLogger(newRestySlogLogger(logger))

@@ -3,6 +3,7 @@ package vela
 import (
 	"errors"
 	"log/slog"
+	"net"
 	"net/http"
 	"time"
 )
@@ -17,6 +18,7 @@ type config struct {
 	discovery         DiscoveryClient
 	lb                LoadBalancer
 	perAttemptTimeout time.Duration
+	connectTimeout    time.Duration
 	maxAttempts       int
 	cooldown          time.Duration
 	logger            *slog.Logger
@@ -51,7 +53,6 @@ func New(target Target, opts ...Option) (*Client, error) {
 		maxAttempts:       defaultMaxAttempts,
 		cooldown:          defaultCooldown,
 		logger:            slog.Default(),
-		httpClient:        &http.Client{},
 		attemptPolicies:   defaultAttemptPolicies(),
 	}
 	for _, opt := range opts {
@@ -84,8 +85,11 @@ func New(target Target, opts ...Option) (*Client, error) {
 	if cfg.logger == nil {
 		cfg.logger = slog.Default()
 	}
+	if cfg.connectTimeout < 0 {
+		cfg.connectTimeout = 0
+	}
 	if cfg.httpClient == nil {
-		cfg.httpClient = &http.Client{}
+		cfg.httpClient = newDefaultHTTPClient(cfg.connectTimeout)
 	}
 	if cfg.transport == nil {
 		cfg.transport = newRestyTransport(cfg, cfg.logger)
@@ -116,11 +120,33 @@ func WithLoadBalancer(lb LoadBalancer) Option {
 	}
 }
 
-// WithTimeout sets the timeout for each request attempt.
+// WithTimeout sets the client-side default timeout for each request attempt.
+// A request without its own timeout inherits this value.
 func WithTimeout(perAttempt time.Duration) Option {
 	return func(cfg *config) {
 		cfg.perAttemptTimeout = perAttempt
 	}
+}
+
+// WithConnectTimeout sets the dial timeout of the default HTTP client. It
+// has no effect when WithHTTPClient or WithTransport supplies a custom
+// transport: those own their dial behavior.
+func WithConnectTimeout(connect time.Duration) Option {
+	return func(cfg *config) {
+		cfg.connectTimeout = connect
+	}
+}
+
+// newDefaultHTTPClient builds the default *http.Client. When connectTimeout
+// is positive, the transport dialer enforces it as a connect timeout.
+func newDefaultHTTPClient(connectTimeout time.Duration) *http.Client {
+	httpClient := &http.Client{}
+	if connectTimeout > 0 {
+		httpClient.Transport = &http.Transport{
+			DialContext: (&net.Dialer{Timeout: connectTimeout}).DialContext,
+		}
+	}
+	return httpClient
 }
 
 // WithMaxAttempts sets the maximum number of request attempts.
