@@ -64,7 +64,7 @@ _, err = client.NewRequest(http.MethodGet, "/health").Do(ctx)
 
 ### 请求与故障
 
-`NewRequest(method, path)` 创建请求。请求构造器支持 path/query 参数、请求头、JSON 请求体和响应结果解码。`Do` 返回收到的 HTTP `Response`（包括非 2xx）和错误；错误可通过 `errors.As` 识别为 `*jinx.Failure`：
+`NewRequest(method, path)` 创建请求。请求构造器支持 path/query 参数、请求头、JSON 请求体（`SetBody`）、表单体（`SetFormParam`，编码为 `application/x-www-form-urlencoded`，与 `SetBody` 互斥）和响应结果解码。`Do` 返回收到的 HTTP `Response`（包括非 2xx）和错误；错误可通过 `errors.As` 识别为 `*jinx.Failure`：
 
 | 故障类别 | 含义 | 默认可用性故障 |
 | --- | --- | --- |

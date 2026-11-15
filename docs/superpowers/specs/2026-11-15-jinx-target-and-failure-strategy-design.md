@@ -222,6 +222,7 @@ func New${Service}Client(config ${Service}ClientConfig) (${Service}, error)
 - fallback 实现本身不会被递归包装进主客户端；其方法按原参数直接调用。
 - fallback 方法自身失败：`errors.Join(原始 Failure, fmt.Errorf("jinx: fallback: %w", fbErr))`，两类错误均可分别检查，不设专用错误类型。
 - 插件同时生成 `types/types.go`（复用 goctl `gogen.BuildTypes`，输出与 `goctl api go` 一致）。第三方服务场景只声明如何调用，**不需要先运行 `goctl api go`**——其生成的 server 侧 routes/handler/logic 等代码没有用途。
+- 生成方法接收单个请求结构体，字段按 goctl tag 分区：`path` → 路径参数（标量，与 route `:name` 一一对应）、`header` → 请求头（标量）、`form` → GET/DELETE/HEAD/OPTIONS 走 query、其余方法走 `application/x-www-form-urlencoded` body（标量；core 的 `SetFormParam` 与 `SetBody` 互斥）、`json` 或无 tag → JSON body（body 只含 json 字段）。同一请求类型混用 json 与 form 字段 → 生成期报错；json+path+header 混用允许。
 - types 放在**导出的** `types` 子包而非 `internal/types`：契约模块会被其他模块 import，Go 的 internal 规则禁止模块外导入 internal 包；消费方同时 import 契约模块（接口）与 `<module>/types`（请求/响应类型）。
 
 ## 请求与响应行为

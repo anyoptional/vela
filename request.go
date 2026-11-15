@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 )
 
 // Request builds and executes a request to the configured target.
@@ -18,6 +19,7 @@ type Request struct {
 	query      map[string]string
 	headers    http.Header
 	body       any
+	form       map[string]string
 	result     any
 	c          *Client
 }
@@ -55,6 +57,17 @@ func (r *Request) SetBody(v any) *Request {
 	return r
 }
 
+// SetFormParam sets a form field encoded as an
+// application/x-www-form-urlencoded request body. It is mutually
+// exclusive with SetBody: setting both fails at Do.
+func (r *Request) SetFormParam(name, value string) *Request {
+	if r.form == nil {
+		r.form = make(map[string]string)
+	}
+	r.form[name] = value
+	return r
+}
+
 // SetResult sets the destination for a successful response body.
 func (r *Request) SetResult(v any) *Request {
 	r.result = v
@@ -81,11 +94,22 @@ func (r *Request) Do(ctx context.Context) (*Response, error) {
 	}
 
 	var body []byte
+	var formEncoded bool
+	if r.body != nil && len(r.form) > 0 {
+		return nil, client.newFailure(KindInvalidCall, errors.New("request body and form params are mutually exclusive"))
+	}
 	if r.body != nil {
 		body, err = json.Marshal(r.body)
 		if err != nil {
 			return nil, client.newFailure(KindInvalidCall, fmt.Errorf("marshal request body: %w", err))
 		}
+	} else if len(r.form) > 0 {
+		values := make(url.Values, len(r.form))
+		for name, value := range r.form {
+			values.Set(name, value)
+		}
+		body = []byte(values.Encode())
+		formEncoded = true
 	}
 	if client.transport == nil {
 		return nil, client.newFailure(KindInvalidCall, errors.New("transport is not configured"))
@@ -176,7 +200,7 @@ func (r *Request) Do(ctx context.Context) (*Response, error) {
 		}
 
 		var bodyReader io.Reader
-		if r.body != nil {
+		if body != nil {
 			bodyReader = bytes.NewReader(body)
 		}
 		attemptCtx, cancelAttempt := context.WithTimeout(ctx, client.cfg.perAttemptTimeout)
@@ -192,7 +216,14 @@ func (r *Request) Do(ctx context.Context) (*Response, error) {
 			}
 			httpRequest.URL.RawQuery = query.Encode()
 		}
-		httpRequest.Header = r.headers.Clone()
+		headers := r.headers.Clone()
+		if formEncoded {
+			if headers == nil {
+				headers = make(http.Header)
+			}
+			headers.Set("Content-Type", "application/x-www-form-urlencoded")
+		}
+		httpRequest.Header = headers
 		if ctx.Err() != nil {
 			cancelAttempt()
 			return lastResponse, client.canceledFailure(context.Cause(ctx), attempts, lastFailure, targetURL)

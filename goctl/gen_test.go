@@ -44,12 +44,16 @@ func TestGenerate_Golden(t *testing.T) {
 	}
 }
 
-func TestGenerate_UnsupportedFormParam(t *testing.T) {
+func TestGenerate_MixedJSONAndFormError(t *testing.T) {
+	api, err := parser.Parse(filepath.Join("testdata", "mixed.api"))
+	if err != nil {
+		t.Fatalf("parser.Parse(mixed.api): %v", err)
+	}
 	dir := t.TempDir()
 	writeModuleFile(t, dir)
-	err := gen(parseFixture(t), dir)
-	if err == nil || !strings.Contains(err.Error(), `jinx-goctl: unsupported form param "status"`) {
-		t.Fatalf("gen() error = %v, want unsupported form param status", err)
+	err = gen(api, dir)
+	if err == nil || !strings.Contains(err.Error(), `mixes json and form fields`) {
+		t.Fatalf("gen() error = %v, want mixed json and form error", err)
 	}
 }
 
@@ -179,7 +183,7 @@ func prepareGeneratedClientModule(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("ReadFile(types.go): %v", err)
 	}
-	for _, want := range []string{"GetOrderReq", "GetOrderResp", "CreateOrderReq", "CreateOrderResp"} {
+	for _, want := range []string{"GetOrderReq", "GetOrderResp", "CreateOrderReq", "CreateOrderResp", "SearchOrderReq", "UpdateStatusReq"} {
 		if !strings.Contains(string(typesSource), want) {
 			t.Errorf("generated types.go missing %q:\n%s", want, typesSource)
 		}
@@ -215,17 +219,33 @@ func (f *fallbackAPI) CreateOrder(context.Context, *types.CreateOrderReq) (*type
 	return &types.CreateOrderResp{Id: 99}, nil
 }
 
-func (f *fallbackAPI) GetOrder(_ context.Context, id int64, _ *types.GetOrderReq) (*types.GetOrderResp, error) {
+func (f *fallbackAPI) GetOrder(_ context.Context, req *types.GetOrderReq) (*types.GetOrderResp, error) {
 	f.calls++
 	if f.err != nil {
 		return nil, f.err
 	}
-	return &types.GetOrderResp{Id: id + 1000}, nil
+	return &types.GetOrderResp{Id: req.Id + 1000}, nil
 }
 
-func (f *fallbackAPI) DeleteOrder(_ context.Context, _ int64, _ *types.GetOrderReq) error {
+func (f *fallbackAPI) DeleteOrder(_ context.Context, _ *types.GetOrderReq) error {
 	f.calls++
 	return f.err
+}
+
+func (f *fallbackAPI) ListOrders(_ context.Context, _ *types.SearchOrderReq) (*types.GetOrderResp, error) {
+	f.calls++
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &types.GetOrderResp{Id: 2000}, nil
+}
+
+func (f *fallbackAPI) UpdateOrderStatus(_ context.Context, _ *types.UpdateStatusReq) (*types.GetOrderResp, error) {
+	f.calls++
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &types.GetOrderResp{Id: 3000}, nil
 }
 
 type fakeDiscovery struct {
@@ -307,7 +327,7 @@ func TestStaticFallbackRunsForAvailabilityFailures(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			fallback := &fallbackAPI{}
 			client := newClient(t, tt.target, tt.discovery, tt.transport, fallback, nil, tt.options...)
-			result, err := client.GetOrder(t.Context(), 42, &types.GetOrderReq{Id: 42})
+			result, err := client.GetOrder(t.Context(), &types.GetOrderReq{Id: 42})
 			if err != nil {
 				t.Fatalf("GetOrder(): %v", err)
 			}
@@ -337,7 +357,7 @@ func TestDefaultAvailabilitySkipsClientAndDecodeFailures(t *testing.T) {
 			client := newClient(t, jinx.Target{Name: "orders", URL: "http://orders.test"}, nil, func(_ context.Context, req *http.Request) (*http.Response, error) {
 				return response(req, tt.status, tt.body), nil
 			}, fallback, nil)
-			_, err := client.GetOrder(t.Context(), 42, &types.GetOrderReq{Id: 42})
+			_, err := client.GetOrder(t.Context(), &types.GetOrderReq{Id: 42})
 			var failure *jinx.Failure
 			if !errors.As(err, &failure) || failure.Kind != tt.wantKind {
 				t.Fatalf("GetOrder() error = %v, want %v", err, tt.wantKind)
@@ -359,7 +379,7 @@ func TestCallerCancellationSkipsFallback(t *testing.T) {
 		return nil, context.Canceled
 	}, fallback, nil)
 
-	_, err := client.GetOrder(ctx, 42, &types.GetOrderReq{Id: 42})
+	_, err := client.GetOrder(ctx, &types.GetOrderReq{Id: 42})
 	var failure *jinx.Failure
 	if !errors.As(err, &failure) || failure.Kind != jinx.KindCanceled {
 		t.Fatalf("GetOrder() error = %v, want canceled failure", err)
@@ -383,7 +403,7 @@ func TestCustomAvailabilityCanRecover429AndDecode(t *testing.T) {
 			client := newClient(t, jinx.Target{Name: "orders", URL: "http://orders.test"}, nil, func(_ context.Context, req *http.Request) (*http.Response, error) {
 				return response(req, tt.status, tt.body), nil
 			}, fallback, func(*jinx.Failure) bool { return true })
-			result, err := client.GetOrder(t.Context(), 42, &types.GetOrderReq{Id: 42})
+			result, err := client.GetOrder(t.Context(), &types.GetOrderReq{Id: 42})
 			if err != nil {
 				t.Fatalf("GetOrder(): %v", err)
 			}
@@ -417,7 +437,7 @@ func TestFallbackFactoryReceivesFailureAndResponseAndJoinsErrors(t *testing.T) {
 		t.Fatalf("NewOrderApiClient(): %v", err)
 	}
 
-	_, err = client.GetOrder(t.Context(), 42, &types.GetOrderReq{Id: 42})
+	_, err = client.GetOrder(t.Context(), &types.GetOrderReq{Id: 42})
 	if !errors.Is(err, fallbackErr) {
 		t.Errorf("GetOrder() error = %v, want fallback error", err)
 	}
@@ -449,7 +469,7 @@ func TestFallbackFactoryReceivesNilResponseForTransportFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewOrderApiClient(): %v", err)
 	}
-	if _, err := client.GetOrder(t.Context(), 42, &types.GetOrderReq{Id: 42}); err != nil {
+	if _, err := client.GetOrder(t.Context(), &types.GetOrderReq{Id: 42}); err != nil {
 		t.Fatalf("GetOrder(): %v", err)
 	}
 	if factoryResponse != nil {
@@ -476,7 +496,7 @@ func TestErrorOnlyRouteFallback(t *testing.T) {
 	client := newClient(t, jinx.Target{Name: "orders", URL: "http://orders.test"}, nil, func(_ context.Context, req *http.Request) (*http.Response, error) {
 		return response(req, http.StatusBadGateway, "unavailable"), nil
 	}, fallback, nil)
-	if err := client.DeleteOrder(t.Context(), 7, &types.GetOrderReq{Id: 7}); err != nil {
+	if err := client.DeleteOrder(t.Context(), &types.GetOrderReq{Id: 7}); err != nil {
 		t.Fatalf("DeleteOrder(): %v", err)
 	}
 	if fallback.calls != 1 {
@@ -488,13 +508,60 @@ func TestErrorOnlyRouteFallback(t *testing.T) {
 	client = newClient(t, jinx.Target{Name: "orders", URL: "http://orders.test"}, nil, func(_ context.Context, req *http.Request) (*http.Response, error) {
 		return response(req, http.StatusBadGateway, "unavailable"), nil
 	}, fallback, nil)
-	err := client.DeleteOrder(t.Context(), 7, &types.GetOrderReq{Id: 7})
+	err := client.DeleteOrder(t.Context(), &types.GetOrderReq{Id: 7})
 	if !errors.Is(err, fallbackErr) {
 		t.Errorf("DeleteOrder() error = %v, want fallback error", err)
 	}
 	var failure *jinx.Failure
 	if !errors.As(err, &failure) || failure.Kind != jinx.KindStatus {
 		t.Errorf("joined failure = %#v, want KindStatus", failure)
+	}
+}
+
+func TestTagWiring(t *testing.T) {
+	fallback := &fallbackAPI{}
+	var gotPath, gotHeader, gotQuery, gotFormBody, gotContentType string
+	capture := func(_ context.Context, req *http.Request) (*http.Response, error) {
+		gotPath = req.URL.Path
+		gotHeader = req.Header.Get("token")
+		gotQuery = req.URL.RawQuery
+		gotContentType = req.Header.Get("Content-Type")
+		if req.Body != nil {
+			body, _ := io.ReadAll(req.Body)
+			gotFormBody = string(body)
+		}
+		return response(req, http.StatusOK, "{\"id\":42}"), nil
+	}
+	client := newClient(t, jinx.Target{Name: "orders", URL: "http://orders.test"}, nil, capture, fallback, nil)
+
+	if _, err := client.GetOrder(t.Context(), &types.GetOrderReq{Id: 42, Token: "t-1"}); err != nil {
+		t.Fatalf("GetOrder(): %v", err)
+	}
+	if gotPath != "/api/v1/orders/42" {
+		t.Errorf("path = %q, want /api/v1/orders/42", gotPath)
+	}
+	if gotHeader != "t-1" {
+		t.Errorf("header = %q, want t-1", gotHeader)
+	}
+
+	if _, err := client.ListOrders(t.Context(), &types.SearchOrderReq{Status: "open"}); err != nil {
+		t.Fatalf("ListOrders(): %v", err)
+	}
+	if gotQuery != "status=open" {
+		t.Errorf("query = %q, want status=open", gotQuery)
+	}
+
+	if _, err := client.UpdateOrderStatus(t.Context(), &types.UpdateStatusReq{Id: 7, Status: "done"}); err != nil {
+		t.Fatalf("UpdateOrderStatus(): %v", err)
+	}
+	if gotPath != "/api/v1/orders/7/status" {
+		t.Errorf("path = %q, want /api/v1/orders/7/status", gotPath)
+	}
+	if gotContentType != "application/x-www-form-urlencoded" {
+		t.Errorf("content type = %q, want application/x-www-form-urlencoded", gotContentType)
+	}
+	if gotFormBody != "status=done" {
+		t.Errorf("form body = %q, want status=done", gotFormBody)
 	}
 }
 `

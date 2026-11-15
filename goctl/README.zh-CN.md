@@ -23,7 +23,14 @@ goctl api plugin --plugin goctl-jinx -api order.api -dir .
 
 目标目录必须包含模块的 `go.mod`；生成器会使用其中的 module path 导入 `<module>/types`。如果目录中已有非测试 Go 文件，生成文件使用这些文件的 package 名；否则默认使用 `client`。
 
-service 块名会原样作为逻辑服务 ID，每个 `@handler` 会生成一个方法。path 参数根据对应 `path` tag 中声明的类型成为位置参数。请求和响应类型由插件生成在 `types` 子包（复用 goctl 的类型生成器，输出与 `goctl api go` 一致）；GET 和 DELETE 方法不会发送请求体。暂不支持 form/query 参数，遇到时会明确返回错误。
+service 块名会原样作为逻辑服务 ID，每个 `@handler` 会生成一个方法。生成的每个方法接收一个请求结构体，字段按 goctl tag 分区：
+
+- `path:"name"` → 路径参数（`SetPathParam`），字段必须是标量，且与 route 中的 `:name` 一一对应
+- `header:"name"` → 请求头（`SetHeader`），字段必须是标量
+- `form:"name"` → GET/DELETE/HEAD/OPTIONS 走 query 参数（`SetQueryParam`），POST/PUT/PATCH 走 `application/x-www-form-urlencoded` body（`SetFormParam`），字段必须是标量
+- `json:"name"` 或无 tag → JSON body（`SetBody`），body 只含 json 字段
+
+一个请求类型不得同时混用 json 与 form 字段（生成期报错）；json+path+header 混用允许。请求和响应类型由插件生成在 `types` 子包（复用 goctl 的类型生成器，输出与 `goctl api go` 一致）。
 
 ## 构造生成客户端
 

@@ -13,9 +13,13 @@ import (
 type OrderApi interface {
 	CreateOrder(ctx context.Context, req *types.CreateOrderReq) (*types.CreateOrderResp, error)
 
-	GetOrder(ctx context.Context, id int64, req *types.GetOrderReq) (*types.GetOrderResp, error)
+	ListOrders(ctx context.Context, req *types.SearchOrderReq) (*types.GetOrderResp, error)
 
-	DeleteOrder(ctx context.Context, id int64, req *types.GetOrderReq) error
+	GetOrder(ctx context.Context, req *types.GetOrderReq) (*types.GetOrderResp, error)
+
+	DeleteOrder(ctx context.Context, req *types.GetOrderReq) error
+
+	UpdateOrderStatus(ctx context.Context, req *types.UpdateStatusReq) (*types.GetOrderResp, error)
 }
 
 type orderApiClient struct {
@@ -78,7 +82,9 @@ func (c *orderApiClient) resolveFallback(ctx context.Context, failure *jinx.Fail
 
 func (c *orderApiClient) CreateOrder(ctx context.Context, req *types.CreateOrderReq) (*types.CreateOrderResp, error) {
 	request := c.c.NewRequest(http.MethodPost, "/api/v1/orders")
-	request.SetBody(req)
+	request.SetBody(map[string]any{
+		"name": req.Name,
+	})
 	var result types.CreateOrderResp
 	request.SetResult(&result)
 	response, err := request.Do(ctx)
@@ -102,9 +108,9 @@ func (c *orderApiClient) CreateOrder(ctx context.Context, req *types.CreateOrder
 	return &result, nil
 }
 
-func (c *orderApiClient) GetOrder(ctx context.Context, id int64, req *types.GetOrderReq) (*types.GetOrderResp, error) {
-	request := c.c.NewRequest(http.MethodGet, "/api/v1/orders/:id")
-	request.SetPathParam("id", fmt.Sprint(id))
+func (c *orderApiClient) ListOrders(ctx context.Context, req *types.SearchOrderReq) (*types.GetOrderResp, error) {
+	request := c.c.NewRequest(http.MethodGet, "/api/v1/orders")
+	request.SetQueryParam("status", fmt.Sprint(req.Status))
 	var result types.GetOrderResp
 	request.SetResult(&result)
 	response, err := request.Do(ctx)
@@ -116,7 +122,7 @@ func (c *orderApiClient) GetOrder(ctx context.Context, id int64, req *types.GetO
 				return nil, errors.Join(err, fallbackErr)
 			}
 			if used {
-				result, fallbackErr := fallback.GetOrder(ctx, id, req)
+				result, fallbackErr := fallback.ListOrders(ctx, req)
 				if fallbackErr != nil {
 					return nil, errors.Join(err, fmt.Errorf("jinx: fallback: %w", fallbackErr))
 				}
@@ -128,9 +134,37 @@ func (c *orderApiClient) GetOrder(ctx context.Context, id int64, req *types.GetO
 	return &result, nil
 }
 
-func (c *orderApiClient) DeleteOrder(ctx context.Context, id int64, req *types.GetOrderReq) error {
+func (c *orderApiClient) GetOrder(ctx context.Context, req *types.GetOrderReq) (*types.GetOrderResp, error) {
+	request := c.c.NewRequest(http.MethodGet, "/api/v1/orders/:id")
+	request.SetPathParam("id", fmt.Sprint(req.Id))
+	request.SetHeader("token", fmt.Sprint(req.Token))
+	var result types.GetOrderResp
+	request.SetResult(&result)
+	response, err := request.Do(ctx)
+	if err != nil {
+		var failure *jinx.Failure
+		if errors.As(err, &failure) {
+			fallback, used, fallbackErr := c.resolveFallback(ctx, failure, response)
+			if fallbackErr != nil {
+				return nil, errors.Join(err, fallbackErr)
+			}
+			if used {
+				result, fallbackErr := fallback.GetOrder(ctx, req)
+				if fallbackErr != nil {
+					return nil, errors.Join(err, fmt.Errorf("jinx: fallback: %w", fallbackErr))
+				}
+				return result, nil
+			}
+		}
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (c *orderApiClient) DeleteOrder(ctx context.Context, req *types.GetOrderReq) error {
 	request := c.c.NewRequest(http.MethodDelete, "/api/v1/orders/:id")
-	request.SetPathParam("id", fmt.Sprint(id))
+	request.SetPathParam("id", fmt.Sprint(req.Id))
+	request.SetHeader("token", fmt.Sprint(req.Token))
 	response, err := request.Do(ctx)
 	if err != nil {
 		var failure *jinx.Failure
@@ -140,7 +174,7 @@ func (c *orderApiClient) DeleteOrder(ctx context.Context, id int64, req *types.G
 				return errors.Join(err, fallbackErr)
 			}
 			if used {
-				if fallbackErr := fallback.DeleteOrder(ctx, id, req); fallbackErr != nil {
+				if fallbackErr := fallback.DeleteOrder(ctx, req); fallbackErr != nil {
 					return errors.Join(err, fmt.Errorf("jinx: fallback: %w", fallbackErr))
 				}
 				return nil
@@ -149,4 +183,31 @@ func (c *orderApiClient) DeleteOrder(ctx context.Context, id int64, req *types.G
 		return err
 	}
 	return nil
+}
+
+func (c *orderApiClient) UpdateOrderStatus(ctx context.Context, req *types.UpdateStatusReq) (*types.GetOrderResp, error) {
+	request := c.c.NewRequest(http.MethodPost, "/api/v1/orders/:id/status")
+	request.SetPathParam("id", fmt.Sprint(req.Id))
+	request.SetFormParam("status", fmt.Sprint(req.Status))
+	var result types.GetOrderResp
+	request.SetResult(&result)
+	response, err := request.Do(ctx)
+	if err != nil {
+		var failure *jinx.Failure
+		if errors.As(err, &failure) {
+			fallback, used, fallbackErr := c.resolveFallback(ctx, failure, response)
+			if fallbackErr != nil {
+				return nil, errors.Join(err, fallbackErr)
+			}
+			if used {
+				result, fallbackErr := fallback.UpdateOrderStatus(ctx, req)
+				if fallbackErr != nil {
+					return nil, errors.Join(err, fmt.Errorf("jinx: fallback: %w", fallbackErr))
+				}
+				return result, nil
+			}
+		}
+		return nil, err
+	}
+	return &result, nil
 }

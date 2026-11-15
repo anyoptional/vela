@@ -35,16 +35,25 @@ type routeTemplateData struct {
 	Name         string
 	Method       string
 	Path         string
-	PathParams   []pathParamTemplateData
 	RequestType  string
 	ResponseType string
-	HasBody      bool
+	PathParams   []taggedField
+	Headers      []taggedField
+	FormParams   []taggedField
+	FormIsQuery  bool
+	BodyFields   []bodyField
 }
 
-type pathParamTemplateData struct {
-	Name    string
-	ArgName string
-	Type    string
+// taggedField maps a request struct field to a path/header/form name.
+type taggedField struct {
+	Name  string
+	Field string
+}
+
+// bodyField maps a request struct field to a JSON body key.
+type bodyField struct {
+	Name  string
+	Field string
 }
 
 func gen(api *spec.ApiSpec, dir string) error {
@@ -150,24 +159,24 @@ func generateRoute(prefix string, route spec.Route) (routeTemplateData, error) {
 		return routeTemplateData{}, fmt.Errorf("jinx-goctl: unsupported HTTP method %q", route.Method)
 	}
 
-	if name, ok, err := unsupportedFormParam(route.RequestType); err != nil {
-		return routeTemplateData{}, err
-	} else if ok {
-		return routeTemplateData{}, fmt.Errorf("jinx-goctl: unsupported form param %q", name)
-	}
-
 	generated := routeTemplateData{
 		Name:   methodName,
 		Method: method,
 		Path:   path.Join(prefix, route.Path),
 	}
+	switch strings.ToUpper(route.Method) {
+	case http.MethodGet, http.MethodDelete, http.MethodHead, http.MethodOptions:
+		generated.FormIsQuery = true
+	}
+
 	if route.RequestType != nil {
 		generated.RequestType = route.RequestType.Name()
 		if !token.IsIdentifier(generated.RequestType) {
 			return routeTemplateData{}, fmt.Errorf("jinx-goctl: unsupported request type %q", generated.RequestType)
 		}
-		httpMethod := strings.ToUpper(route.Method)
-		generated.HasBody = httpMethod != http.MethodGet && httpMethod != http.MethodDelete
+		if err := generated.classifyRequestFields(route.Path, route.RequestType); err != nil {
+			return routeTemplateData{}, err
+		}
 	}
 	if route.ResponseType != nil {
 		generated.ResponseType = route.ResponseType.Name()
@@ -175,65 +184,90 @@ func generateRoute(prefix string, route spec.Route) (routeTemplateData, error) {
 			return routeTemplateData{}, fmt.Errorf("jinx-goctl: unsupported response type %q", generated.ResponseType)
 		}
 	}
-
-	members := structMembers(route.RequestType)
-	for segment := range strings.SplitSeq(route.Path, "/") {
-		if !strings.HasPrefix(segment, ":") {
-			continue
-		}
-		name := strings.TrimPrefix(segment, ":")
-		member, ok, err := findPathMember(members, name)
-		if err != nil {
-			return routeTemplateData{}, err
-		}
-		if !ok || member.Type == nil {
-			return routeTemplateData{}, fmt.Errorf("jinx-goctl: cannot determine type for path param %q", name)
-		}
-		camel := toCamel(name)
-		argName := stringx.From(camel).Untitle()
-		if !token.IsIdentifier(argName) {
-			return routeTemplateData{}, fmt.Errorf("jinx-goctl: invalid path param name %q", name)
-		}
-		generated.PathParams = append(generated.PathParams, pathParamTemplateData{
-			Name:    name,
-			ArgName: argName,
-			Type:    member.Type.Name(),
-		})
-	}
 	return generated, nil
 }
 
-func unsupportedFormParam(requestType spec.Type) (string, bool, error) {
+// classifyRequestFields partitions the request struct's fields by their
+// goctl tags: path → SetPathParam, header → SetHeader, form/query →
+// SetQueryParam or SetFormParam, json (or untagged) → JSON body.
+func (generated *routeTemplateData) classifyRequestFields(routePath string, requestType spec.Type) error {
+	pathParamNames := make(map[string]bool)
+	for segment := range strings.SplitSeq(routePath, "/") {
+		if name, ok := strings.CutPrefix(segment, ":"); ok && name != "" {
+			pathParamNames[name] = true
+		}
+	}
+	matchedPath := make(map[string]bool)
+	jsonSeen := false
+	formSeen := false
+
 	for _, member := range structMembers(requestType) {
 		tags, err := spec.Parse(member.Tag)
 		if err != nil {
-			return "", false, fmt.Errorf("jinx-goctl: parse tags for request field %q: %w", member.Name, err)
+			return fmt.Errorf("jinx-goctl: parse tags for request field %q: %w", member.Name, err)
 		}
-		for _, key := range []string{"form", "query"} {
-			tag, err := tags.Get(key)
-			if err == nil && tag != nil {
-				if tag.Name != "" {
-					return tag.Name, true, nil
-				}
-				return member.Name, true, nil
+		kind, name := memberTagKind(tags, member.Name)
+		switch kind {
+		case "path":
+			if !pathParamNames[name] {
+				return fmt.Errorf("jinx-goctl: request field %q has path tag %q not present in route %q", member.Name, name, routePath)
 			}
+			if !isScalarType(member.Type) {
+				return fmt.Errorf("jinx-goctl: path field %q must be a scalar type", member.Name)
+			}
+			matchedPath[name] = true
+			generated.PathParams = append(generated.PathParams, taggedField{Name: name, Field: member.Name})
+		case "header":
+			if !isScalarType(member.Type) {
+				return fmt.Errorf("jinx-goctl: header field %q must be a scalar type", member.Name)
+			}
+			generated.Headers = append(generated.Headers, taggedField{Name: name, Field: member.Name})
+		case "form":
+			formSeen = true
+			if !isScalarType(member.Type) {
+				return fmt.Errorf("jinx-goctl: form field %q must be a scalar type", member.Name)
+			}
+			generated.FormParams = append(generated.FormParams, taggedField{Name: name, Field: member.Name})
+		default:
+			jsonSeen = true
+			generated.BodyFields = append(generated.BodyFields, bodyField{Name: name, Field: member.Name})
 		}
 	}
-	return "", false, nil
+
+	if jsonSeen && formSeen {
+		return fmt.Errorf("jinx-goctl: request type %q mixes json and form fields", requestType.Name())
+	}
+	for name := range pathParamNames {
+		if !matchedPath[name] {
+			return fmt.Errorf("jinx-goctl: cannot determine path field for path param %q", name)
+		}
+	}
+	return nil
 }
 
-func findPathMember(members []spec.Member, name string) (spec.Member, bool, error) {
-	for _, member := range members {
-		tags, err := spec.Parse(member.Tag)
-		if err != nil {
-			return spec.Member{}, false, fmt.Errorf("jinx-goctl: parse tags for request field %q: %w", member.Name, err)
-		}
-		tag, err := tags.Get("path")
-		if err == nil && tag != nil && tag.Name == name {
-			return member, true, nil
+// memberTagKind returns the goctl tag kind and its name for a member.
+// Untagged members are treated as JSON body fields named after the member.
+func memberTagKind(tags *spec.Tags, memberName string) (kind, name string) {
+	for _, key := range []string{"path", "header", "form", "query", "json"} {
+		tag, err := tags.Get(key)
+		if err == nil && tag != nil {
+			kind := key
+			if key == "query" {
+				kind = "form"
+			}
+			return kind, cmp.Or(tag.Name, memberName)
 		}
 	}
-	return spec.Member{}, false, nil
+	return "json", memberName
+}
+
+func isScalarType(tp spec.Type) bool {
+	switch tp.(type) {
+	case spec.PrimitiveType, *spec.PrimitiveType:
+		return true
+	default:
+		return false
+	}
 }
 
 func structMembers(requestType spec.Type) []spec.Member {

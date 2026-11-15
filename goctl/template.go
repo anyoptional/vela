@@ -21,7 +21,7 @@ import (
 
 type {{.ServiceType}} interface {
 	{{range .Routes}}
-	{{.Name}}(ctx context.Context{{range .PathParams}}, {{.ArgName}} {{.Type}}{{end}}{{if .RequestType}}, req *types.{{.RequestType}}{{end}}) {{if .ResponseType}}(*types.{{.ResponseType}}, error){{else}}error{{end}}
+	{{.Name}}(ctx context.Context{{if .RequestType}}, req *types.{{.RequestType}}{{end}}) {{if .ResponseType}}(*types.{{.ResponseType}}, error){{else}}error{{end}}
 	{{end}}
 }
 
@@ -84,10 +84,15 @@ func (c *{{.ClientType}}) resolveFallback(ctx context.Context, failure *jinx.Fai
 }
 
 {{range .Routes}}
-func (c *{{$.ClientType}}) {{.Name}}(ctx context.Context{{range .PathParams}}, {{.ArgName}} {{.Type}}{{end}}{{if .RequestType}}, req *types.{{.RequestType}}{{end}}) {{if .ResponseType}}(*types.{{.ResponseType}}, error){{else}}error{{end}} {
+func (c *{{$.ClientType}}) {{.Name}}(ctx context.Context{{if .RequestType}}, req *types.{{.RequestType}}{{end}}) {{if .ResponseType}}(*types.{{.ResponseType}}, error){{else}}error{{end}} {
 	request := c.c.NewRequest({{.Method}}, {{quote .Path}})
-	{{range .PathParams}}request.SetPathParam({{quote .Name}}, fmt.Sprint({{.ArgName}}))
-	{{end}}{{if .HasBody}}request.SetBody(req)
+	{{range .PathParams}}request.SetPathParam({{quote .Name}}, fmt.Sprint(req.{{.Field}}))
+	{{end}}{{range .Headers}}request.SetHeader({{quote .Name}}, fmt.Sprint(req.{{.Field}}))
+	{{end}}{{if .FormIsQuery}}{{range .FormParams}}request.SetQueryParam({{quote .Name}}, fmt.Sprint(req.{{.Field}}))
+	{{end}}{{else}}{{range .FormParams}}request.SetFormParam({{quote .Name}}, fmt.Sprint(req.{{.Field}}))
+	{{end}}{{end}}{{if .BodyFields}}request.SetBody(map[string]any{
+		{{range .BodyFields}}{{quote .Name}}: req.{{.Field}},
+		{{end}}})
 	{{end}}{{if .ResponseType}}var result types.{{.ResponseType}}
 	request.SetResult(&result)
 	response, err := request.Do(ctx)
@@ -99,7 +104,7 @@ func (c *{{$.ClientType}}) {{.Name}}(ctx context.Context{{range .PathParams}}, {
 				return nil, errors.Join(err, fallbackErr)
 			}
 			if used {
-				result, fallbackErr := fallback.{{.Name}}(ctx{{range .PathParams}}, {{.ArgName}}{{end}}{{if .RequestType}}, req{{end}})
+				result, fallbackErr := fallback.{{.Name}}(ctx{{if .RequestType}}, req{{end}})
 				if fallbackErr != nil {
 					return nil, errors.Join(err, fmt.Errorf("jinx: fallback: %w", fallbackErr))
 				}
@@ -118,7 +123,7 @@ func (c *{{$.ClientType}}) {{.Name}}(ctx context.Context{{range .PathParams}}, {
 				return errors.Join(err, fallbackErr)
 			}
 			if used {
-				if fallbackErr := fallback.{{.Name}}(ctx{{range .PathParams}}, {{.ArgName}}{{end}}{{if .RequestType}}, req{{end}}); fallbackErr != nil {
+				if fallbackErr := fallback.{{.Name}}(ctx{{if .RequestType}}, req{{end}}); fallbackErr != nil {
 					return errors.Join(err, fmt.Errorf("jinx: fallback: %w", fallbackErr))
 				}
 				return nil

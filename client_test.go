@@ -152,11 +152,13 @@ type fakeTransportResult struct {
 }
 
 type fakeTransport struct {
-	mu      sync.Mutex
-	results map[string][]fakeTransportResult
-	next    map[string]int
-	hosts   []string
-	urls    []string
+	mu           sync.Mutex
+	results      map[string][]fakeTransportResult
+	next         map[string]int
+	hosts        []string
+	urls         []string
+	bodies       []string
+	contentTypes []string
 }
 
 func (f *fakeTransport) do(_ context.Context, req *http.Request) (*http.Response, error) {
@@ -164,6 +166,15 @@ func (f *fakeTransport) do(_ context.Context, req *http.Request) (*http.Response
 	host := req.URL.Hostname()
 	f.hosts = append(f.hosts, host)
 	f.urls = append(f.urls, req.URL.String())
+	var body string
+	if req.Body != nil {
+		read, err := io.ReadAll(req.Body)
+		if err == nil {
+			body = string(read)
+		}
+	}
+	f.bodies = append(f.bodies, body)
+	f.contentTypes = append(f.contentTypes, req.Header.Get("Content-Type"))
 	resultIndex := f.next[host]
 	f.next[host]++
 	results := f.results[host]
@@ -188,6 +199,12 @@ func (f *fakeTransport) snapshot() ([]string, []string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]string(nil), f.hosts...), append([]string(nil), f.urls...)
+}
+
+func (f *fakeTransport) requestSnapshot() (bodies, contentTypes []string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.bodies...), append([]string(nil), f.contentTypes...)
 }
 
 func newFailoverTestClient(t *testing.T, discovery DiscoveryClient, transport *fakeTransport, opts ...Option) *Client {
@@ -621,5 +638,40 @@ func TestDo_ServiceModeEscapesPath(t *testing.T) {
 	want := "http://a:8080/files/a%3Fadmin=true%23frag"
 	if len(urls) != 1 || urls[0] != want {
 		t.Errorf("request URL = %v, want [%s]", urls, want)
+	}
+}
+
+func TestDo_FormParamsEncoded(t *testing.T) {
+	discovery := fakeDiscovery{instances: []Instance{{ID: "a", Host: "a", Port: 8080}}}
+	transport := &fakeTransport{next: make(map[string]int)}
+	client := newFailoverTestClient(t, discovery, transport)
+
+	if _, err := client.NewRequest(http.MethodPost, "/orders").
+		SetFormParam("name", "a b&c").
+		SetFormParam("status", "1").
+		Do(t.Context()); err != nil {
+		t.Fatalf("Do() error = %v", err)
+	}
+	bodies, contentTypes := transport.requestSnapshot()
+	if len(bodies) != 1 || bodies[0] != "name=a+b%26c&status=1" {
+		t.Errorf("request bodies = %q, want [name=a+b%%26c&status=1]", bodies)
+	}
+	if len(contentTypes) != 1 || contentTypes[0] != "application/x-www-form-urlencoded" {
+		t.Errorf("content types = %q, want [application/x-www-form-urlencoded]", contentTypes)
+	}
+}
+
+func TestDo_FormAndBodyConflict(t *testing.T) {
+	discovery := fakeDiscovery{instances: []Instance{{ID: "a", Host: "a", Port: 8080}}}
+	transport := &fakeTransport{next: make(map[string]int)}
+	client := newFailoverTestClient(t, discovery, transport)
+
+	_, err := client.NewRequest(http.MethodPost, "/orders").
+		SetFormParam("name", "x").
+		SetBody(map[string]any{"name": "x"}).
+		Do(t.Context())
+	var failure *Failure
+	if !errors.As(err, &failure) || failure.Kind != KindInvalidCall {
+		t.Fatalf("Do() error = %v, want KindInvalidCall", err)
 	}
 }

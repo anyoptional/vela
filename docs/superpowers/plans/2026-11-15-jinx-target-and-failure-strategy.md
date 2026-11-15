@@ -316,6 +316,7 @@ type ${Service}ClientConfig struct {
 
 - 生成 `New${Service}Client(config ${Service}ClientConfig) (${Service}, error)`。静态 `Fallback` 与 `FallbackFactory` 互斥：同时配置 = 构造错误（报错串写明冲突）。
 - 插件同时生成 `types/types.go`（复用 goctl `gogen.BuildTypes`），调用方**不需要先运行 `goctl api go`**（第三方服务场景只要声明如何调用，避免生成 server 侧 routes/handler/logic）。types 为导出子包（非 internal）：契约模块被其他模块 import 时消费方可导入 `<module>/types`。
+- 生成方法接收单个请求结构体，字段按 goctl tag 分区（path/header/form/json），form 在 GET/DELETE/HEAD/OPTIONS 走 query、其余走 form body；json 与 form 混用生成期报错。
 - 每个生成方法单一分派路径（模板不得 switch `Failure.Kind`）：
 
 ```go

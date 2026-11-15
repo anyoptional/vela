@@ -2,6 +2,7 @@ syntax = "v1"
 
 type GetOrderReq {
 	Id int64 `path:"id"`
+	Token string `header:"token"`
 }
 
 type GetOrderResp {
@@ -20,6 +21,11 @@ type SearchOrderReq {
 	Status string `form:"status"`
 }
 
+type UpdateStatusReq {
+	Id int64 `path:"id"`
+	Status string `form:"status"`
+}
+
 @server (
 	prefix: /api/v1
 )
@@ -32,6 +38,12 @@ service order-api {
 
 	@handler DeleteOrder
 	delete /orders/:id (GetOrderReq)
+
+	@handler ListOrders
+	get /orders (SearchOrderReq) returns (GetOrderResp)
+
+	@handler UpdateOrderStatus
+	post /orders/:id/status (UpdateStatusReq) returns (GetOrderResp)
 }
 
 @server (
@@ -41,4 +53,3 @@ service order-api {
 	@handler SearchOrders
 	get /orders (SearchOrderReq) returns (GetOrderResp)
 }
-
