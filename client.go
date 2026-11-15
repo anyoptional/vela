@@ -30,14 +30,13 @@ type Option func(*config)
 
 // Client sends requests to its configured target.
 type Client struct {
-	target     Target
-	discovery  DiscoveryClient
-	lb         LoadBalancer
-	cfg        config
-	httpClient *http.Client
-	logger     *slog.Logger
-	cool       cooldownTracker
-	transport  Transport
+	target    Target
+	discovery DiscoveryClient
+	lb        LoadBalancer
+	cfg       config
+	logger    *slog.Logger
+	cool      cooldownTracker
+	transport Transport
 }
 
 // New constructs a Client for the supplied target and options.
@@ -93,14 +92,13 @@ func New(target Target, opts ...Option) (*Client, error) {
 	}
 
 	return &Client{
-		target:     target,
-		discovery:  cfg.discovery,
-		lb:         cfg.lb,
-		cfg:        cfg,
-		httpClient: cfg.httpClient,
-		logger:     cfg.logger,
-		cool:       newCooldownTracker(cfg.cooldown),
-		transport:  cfg.transport,
+		target:    target,
+		discovery: cfg.discovery,
+		lb:        cfg.lb,
+		cfg:       cfg,
+		logger:    cfg.logger,
+		cool:      newCooldownTracker(cfg.cooldown),
+		transport: cfg.transport,
 	}, nil
 }
 

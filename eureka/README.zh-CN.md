@@ -48,11 +48,18 @@ func main() {
 		}
 	}()
 
-	client := jinx.New(eurekaadapter.New(eurekaClient))
+	client, err := jinx.New(
+		jinx.Target{Name: "ORDERS"},
+		jinx.WithDiscovery(eurekaadapter.New(eurekaClient)),
+	)
+	if err != nil {
+		slog.Error("创建 jinx 客户端", "error", err)
+		return
+	}
 	var health struct {
 		Status string `json:"status"`
 	}
-	if _, err := client.NewRequest("ORDERS", http.MethodGet, "/health").
+	if _, err := client.NewRequest(http.MethodGet, "/health").
 		SetResult(&health).Do(ctx); err != nil {
 		slog.Error("请求 orders 服务", "error", err)
 		return
@@ -61,6 +68,6 @@ func main() {
 }
 ```
 
-传给 `NewRequest` 的服务 ID 必须与 Eureka 应用名一致。适配器只返回状态为 `UP` 且至少有一个启用端口的实例；安全端口启用时优先使用安全端口，并将元数据值转换为字符串。Eureka 的 `logr` 日志会桥接到默认 `slog` logger。
+`Target.Name` 必须与 Eureka 应用名一致。适配器只返回状态为 `UP` 且至少有一个启用端口的实例；安全端口启用时优先使用安全端口，并将元数据值转换为字符串。Eureka 的 `logr` 日志会桥接到默认 `slog` logger。
 
 运行真实环境集成测试时，将 `JINX_EUREKA_URL` 设为可访问的 Eureka base URL，并在本模块执行 `go test ./... -run TestLive -v`。测试会注册一个临时实例，并在清理阶段注销。

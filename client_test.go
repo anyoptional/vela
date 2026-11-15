@@ -41,7 +41,7 @@ func TestNew_Defaults(t *testing.T) {
 	if client.logger != slog.Default() {
 		t.Error("logger is not slog.Default()")
 	}
-	if client.httpClient == nil {
+	if client.cfg.httpClient == nil {
 		t.Error("httpClient is nil")
 	}
 }
@@ -90,7 +90,7 @@ func TestNew_Options(t *testing.T) {
 	if client.logger != logger {
 		t.Error("logger was not applied")
 	}
-	if client.httpClient != httpClient {
+	if client.cfg.httpClient != httpClient {
 		t.Error("httpClient was not applied")
 	}
 }
@@ -559,5 +559,67 @@ func TestClient_ConcurrentRR(t *testing.T) {
 	}
 	if len(hosts) != 1000 || counts["a"] != 500 || counts["b"] != 500 {
 		t.Errorf("host counts = %v across %d calls, want 500 each across 1000", counts, len(hosts))
+	}
+}
+
+func TestDo_TransportErrorAfterStatusClearsResponse(t *testing.T) {
+	discovery := fakeDiscovery{instances: []Instance{
+		{ID: "a", Host: "a", Port: 8080},
+		{ID: "b", Host: "b", Port: 8080},
+	}}
+	transport := &fakeTransport{results: map[string][]fakeTransportResult{
+		"a": {{statusCode: http.StatusInternalServerError, body: "boom"}},
+		"b": {{err: errors.New("connection refused")}},
+	}, next: make(map[string]int)}
+	client := newFailoverTestClient(t, discovery, transport, WithLoadBalancer(firstLoadBalancer{}))
+
+	resp, err := client.NewRequest(http.MethodGet, "/orders").Do(t.Context())
+	var failure *Failure
+	if !errors.As(err, &failure) || failure.Kind != KindTransport {
+		t.Fatalf("Do() error = %v, want KindTransport", err)
+	}
+	if resp != nil {
+		t.Errorf("Do() response = %+v, want nil after transport failure on final attempt", resp)
+	}
+}
+
+func TestDo_CancelReturnsLastResponse(t *testing.T) {
+	discovery := fakeDiscovery{instances: []Instance{{ID: "a", Host: "a", Port: 8080}}}
+	transport := &fakeTransport{results: map[string][]fakeTransportResult{
+		"a": {{statusCode: http.StatusInternalServerError, body: "boom"}},
+	}, next: make(map[string]int)}
+	var cancel context.CancelFunc
+	client := newFailoverTestClient(t, discovery, transport,
+		WithAttemptPolicies([]AttemptPolicy{
+			func(ctx context.Context, _ *Failure, _ AttemptState) (AttemptAction, error) {
+				cancel()
+				return AttemptRetrySameEndpoint, nil
+			},
+		}))
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	resp, err := client.NewRequest(http.MethodGet, "/orders").Do(ctx)
+	var failure *Failure
+	if !errors.As(err, &failure) || failure.Kind != KindCanceled {
+		t.Fatalf("Do() error = %v, want KindCanceled", err)
+	}
+	if resp == nil || resp.StatusCode != http.StatusInternalServerError {
+		t.Errorf("Do() response = %+v, want the 500 response received before cancel", resp)
+	}
+}
+
+func TestDo_ServiceModeEscapesPath(t *testing.T) {
+	discovery := fakeDiscovery{instances: []Instance{{ID: "a", Host: "a", Port: 8080}}}
+	transport := &fakeTransport{next: make(map[string]int)}
+	client := newFailoverTestClient(t, discovery, transport)
+
+	if _, err := client.NewRequest(http.MethodGet, "/files/a?admin=true#frag").Do(t.Context()); err != nil {
+		t.Fatalf("Do() error = %v", err)
+	}
+	_, urls := transport.snapshot()
+	want := "http://a:8080/files/a%3Fadmin=true%23frag"
+	if len(urls) != 1 || urls[0] != want {
+		t.Errorf("request URL = %v, want [%s]", urls, want)
 	}
 }

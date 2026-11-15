@@ -33,7 +33,14 @@ func TestGenerate_Golden(t *testing.T) {
 		t.Fatalf("ReadFile(client.golden): %v", err)
 	}
 	if !bytes.Equal(normalizeLineEndings(got), normalizeLineEndings(want)) {
-		t.Errorf("generated client differs from golden\n--- got ---\n%s\n--- want ---\n%s", got, want)
+		ng, nw := normalizeLineEndings(got), normalizeLineEndings(want)
+		for i := 0; i < min(len(ng), len(nw)); i++ {
+			if ng[i] != nw[i] {
+				t.Errorf("generated client differs from golden at byte %d: got %q want %q\n--- got ---\n%s\n--- want ---\n%s", i, ng[i:min(i+20, len(ng))], nw[i:min(i+20, len(nw))], got, want)
+				return
+			}
+		}
+		t.Errorf("generated client differs from golden at length: got %d want %d\n--- got ---\n%s\n--- want ---\n%s", len(ng), len(nw), got, want)
 	}
 }
 
@@ -218,6 +225,11 @@ func (f *fallbackAPI) GetOrder(_ context.Context, id int64, _ *types.GetOrderReq
 		return nil, f.err
 	}
 	return &types.GetOrderResp{Id: id + 1000}, nil
+}
+
+func (f *fallbackAPI) DeleteOrder(_ context.Context, _ int64, _ *types.GetOrderReq) error {
+	f.calls++
+	return f.err
 }
 
 type fakeDiscovery struct {
@@ -460,6 +472,33 @@ func TestStaticFallbackAndFactoryAreMutuallyExclusive(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "mutually exclusive") {
 		t.Fatalf("NewOrderApiClient() error = %v, want mutually exclusive fallback error", err)
+	}
+}
+
+func TestErrorOnlyRouteFallback(t *testing.T) {
+	fallback := &fallbackAPI{}
+	client := newClient(t, jinx.Target{Name: "orders", URL: "http://orders.test"}, nil, func(_ context.Context, req *http.Request) (*http.Response, error) {
+		return response(req, http.StatusBadGateway, "unavailable"), nil
+	}, fallback, nil)
+	if err := client.DeleteOrder(t.Context(), 7, &types.GetOrderReq{Id: 7}); err != nil {
+		t.Fatalf("DeleteOrder(): %v", err)
+	}
+	if fallback.calls != 1 {
+		t.Errorf("fallback calls = %d, want 1", fallback.calls)
+	}
+
+	fallbackErr := errors.New("delete fallback failed")
+	fallback = &fallbackAPI{err: fallbackErr}
+	client = newClient(t, jinx.Target{Name: "orders", URL: "http://orders.test"}, nil, func(_ context.Context, req *http.Request) (*http.Response, error) {
+		return response(req, http.StatusBadGateway, "unavailable"), nil
+	}, fallback, nil)
+	err := client.DeleteOrder(t.Context(), 7, &types.GetOrderReq{Id: 7})
+	if !errors.Is(err, fallbackErr) {
+		t.Errorf("DeleteOrder() error = %v, want fallback error", err)
+	}
+	var failure *jinx.Failure
+	if !errors.As(err, &failure) || failure.Kind != jinx.KindStatus {
+		t.Errorf("joined failure = %#v, want KindStatus", failure)
 	}
 }
 `

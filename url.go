@@ -16,12 +16,32 @@ func joinPath(prefix, path string) string {
 	return joined
 }
 
-func buildURL(ins Instance, path string, pathParams map[string]string) (string, error) {
-	path, err := substitutePathParams(path, pathParams)
+// escapeStaticSegments escapes every path segment except :param placeholders,
+// so route paths cannot inject query strings or fragments and literal
+// reserved characters stay encoded.
+func escapeStaticSegments(path string) (string, error) {
+	segments := strings.Split(path, "/")
+	for i, segment := range segments {
+		if strings.HasPrefix(segment, ":") {
+			continue
+		}
+		decoded, err := url.PathUnescape(segment)
+		if err != nil {
+			return "", err
+		}
+		segments[i] = url.PathEscape(decoded)
+	}
+	return strings.Join(segments, "/"), nil
+}
+
+// resolveServicePath escapes static segments and substitutes path params.
+// It is the service-mode counterpart of buildDirectURL's escaping.
+func resolveServicePath(path string, pathParams map[string]string) (string, error) {
+	escaped, err := escapeStaticSegments(path)
 	if err != nil {
 		return "", err
 	}
-	return buildURLFromPath(ins, path), nil
+	return substitutePathParams(escaped, pathParams)
 }
 
 func buildDirectURL(baseURL, prefix, path string) (string, error) {

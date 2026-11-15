@@ -75,7 +75,7 @@ func (r *Request) Do(ctx context.Context) (*Response, error) {
 
 	client := r.c
 	direct := client.target.Mode() == TargetDirect
-	resolvedPath, err := substitutePathParams(joinPath(client.target.Path, r.path), r.pathParams)
+	resolvedPath, err := resolveServicePath(joinPath(client.target.Path, r.path), r.pathParams)
 	if err != nil {
 		return nil, client.newFailure(KindInvalidCall, err)
 	}
@@ -213,6 +213,10 @@ func (r *Request) Do(ctx context.Context) (*Response, error) {
 					err = errors.Join(err, fmt.Errorf("read response body: %w", readErr))
 				}
 				attemptTimedOut = attemptCtx.Err() != nil && ctx.Err() == nil
+			} else {
+				// No response on the final attempt: drop any response from
+				// earlier attempts so the returned Response matches the failure.
+				lastResponse = nil
 			}
 			cancelAttempt()
 			if ctx.Err() != nil {
@@ -224,8 +228,9 @@ func (r *Request) Do(ctx context.Context) (*Response, error) {
 			failure = client.failureForAttempt(KindTransport, 0, err, attempts, instance, targetURL, "")
 		} else if httpResponse == nil {
 			cancelAttempt()
+			lastResponse = nil
 			if ctx.Err() != nil {
-				return nil, client.canceledFailure(context.Cause(ctx), attempts, nil, targetURL)
+				return lastResponse, client.canceledFailure(context.Cause(ctx), attempts, nil, targetURL)
 			}
 			var cause error = errors.New("transport returned nil response")
 			if attemptTimedOut {

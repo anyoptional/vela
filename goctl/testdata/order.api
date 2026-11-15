@@ -29,6 +29,9 @@ service order-api {
 
 	@handler CreateOrder
 	post /orders (CreateOrderReq) returns (CreateOrderResp)
+
+	@handler DeleteOrder
+	delete /orders/:id (GetOrderReq)
 }
 
 @server (

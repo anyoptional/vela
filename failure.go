@@ -40,7 +40,6 @@ type Failure struct {
 	attempt      int
 	attemptLimit int
 	instanceID   string
-	serviceID    string
 	endpoint     string
 	bodyExcerpt  string
 }
@@ -69,9 +68,6 @@ func (f *Failure) Error() string {
 	}
 	if f.instanceID != "" {
 		parts = append(parts, "instance_id="+strconv.Quote(f.instanceID))
-	}
-	if f.serviceID != "" {
-		parts = append(parts, "service_id="+strconv.Quote(f.serviceID))
 	}
 	if endpoint := sanitizeEndpoint(f.endpoint); endpoint != "" {
 		parts = append(parts, "endpoint="+strconv.Quote(endpoint))
@@ -115,9 +111,6 @@ func (f *Failure) LogValue() slog.Value {
 	if f.instanceID != "" {
 		attrs = append(attrs, slog.String("instance_id", f.instanceID))
 	}
-	if f.serviceID != "" {
-		attrs = append(attrs, slog.String("service_id", f.serviceID))
-	}
 	if endpoint := sanitizeEndpoint(f.endpoint); endpoint != "" {
 		attrs = append(attrs, slog.String("endpoint", endpoint))
 	}
@@ -160,7 +153,9 @@ func sanitizeEndpoint(endpoint string) string {
 }
 
 func boundedExcerpt(excerpt string) string {
-	return excerpt[:min(len(excerpt), failureExcerptLimit)]
+	// Byte-bounded cutting may split a multi-byte rune; drop the broken tail
+	// instead of emitting invalid UTF-8 into logs.
+	return strings.ToValidUTF8(excerpt[:min(len(excerpt), failureExcerptLimit)], "")
 }
 
 var _ error = (*Failure)(nil)

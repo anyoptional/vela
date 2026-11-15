@@ -16,7 +16,8 @@ const (
 	AttemptNext AttemptAction = iota
 	// AttemptRetrySameEndpoint retries the endpoint used by the last attempt.
 	AttemptRetrySameEndpoint
-	// AttemptFailover selects an untried service instance.
+	// AttemptFailover selects an untried service instance. In direct mode it
+	// is equivalent to AttemptNext: the single endpoint cannot fail over.
 	AttemptFailover
 	// AttemptStop ends request attempts.
 	AttemptStop
@@ -103,13 +104,13 @@ func invalidPolicyFailure(original *Failure, cause error) *Failure {
 	}
 	return &Failure{
 		Kind:         KindInvalidCall,
+		StatusCode:   original.StatusCode,
 		Err:          errors.Join(original, cause),
 		clientName:   original.clientName,
 		targetMode:   original.targetMode,
 		attempt:      original.attempt,
 		attemptLimit: original.attemptLimit,
 		instanceID:   original.instanceID,
-		serviceID:    original.serviceID,
 		endpoint:     original.endpoint,
 		bodyExcerpt:  original.bodyExcerpt,
 	}
