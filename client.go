@@ -21,12 +21,14 @@ type config struct {
 	cooldown          time.Duration
 	logger            *slog.Logger
 	httpClient        *http.Client
+	attemptPolicies   []AttemptPolicy
+	transport         Transport
 }
 
 // Option configures a Client.
 type Option func(*config)
 
-// Client sends requests to discovered service instances.
+// Client sends requests to its configured target.
 type Client struct {
 	target     Target
 	discovery  DiscoveryClient
@@ -35,7 +37,7 @@ type Client struct {
 	httpClient *http.Client
 	logger     *slog.Logger
 	cool       cooldownTracker
-	transport  transport
+	transport  Transport
 }
 
 // New constructs a Client for the supplied target and options.
@@ -51,6 +53,7 @@ func New(target Target, opts ...Option) (*Client, error) {
 		cooldown:          defaultCooldown,
 		logger:            slog.Default(),
 		httpClient:        &http.Client{},
+		attemptPolicies:   defaultAttemptPolicies(),
 	}
 	for _, opt := range opts {
 		if opt != nil {
@@ -85,6 +88,9 @@ func New(target Target, opts ...Option) (*Client, error) {
 	if cfg.httpClient == nil {
 		cfg.httpClient = &http.Client{}
 	}
+	if cfg.transport == nil {
+		cfg.transport = newRestyTransport(cfg, cfg.logger)
+	}
 
 	return &Client{
 		target:     target,
@@ -94,7 +100,7 @@ func New(target Target, opts ...Option) (*Client, error) {
 		httpClient: cfg.httpClient,
 		logger:     cfg.logger,
 		cool:       newCooldownTracker(cfg.cooldown),
-		transport:  newRestyTransport(cfg, cfg.logger),
+		transport:  cfg.transport,
 	}, nil
 }
 

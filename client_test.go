@@ -2,6 +2,7 @@ package jinx
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -360,18 +361,16 @@ func TestFailover_AllCooldownStillAttempts(t *testing.T) {
 func TestDo_DiscoveryErrors(t *testing.T) {
 	emptyClient := newFailoverTestClient(t, fakeDiscovery{}, &fakeTransport{next: make(map[string]int)})
 	_, err := emptyClient.NewRequest(http.MethodGet, "/orders").Do(t.Context())
-	if !errors.Is(err, ErrNoInstances) {
-		t.Errorf("empty discovery error = %v, want %v", err, ErrNoInstances)
+	var failure *Failure
+	if !errors.As(err, &failure) || failure.Kind != KindDiscovery || !errors.Is(failure, ErrNoInstances) {
+		t.Errorf("empty discovery error = %v, want KindDiscovery wrapping %v", err, ErrNoInstances)
 	}
 
 	discoveryErr := errors.New("registry offline")
 	client := newFailoverTestClient(t, fakeDiscovery{err: discoveryErr}, &fakeTransport{next: make(map[string]int)})
 	_, err = client.NewRequest(http.MethodGet, "/orders").Do(t.Context())
-	if err == nil || errors.Is(err, ErrNoInstances) || !errors.Is(err, discoveryErr) {
+	if !errors.As(err, &failure) || failure.Kind != KindDiscovery || errors.Is(err, ErrNoInstances) || !errors.Is(err, discoveryErr) {
 		t.Errorf("discovery error = %v, want wrapped registry error", err)
-	}
-	if err == nil || !strings.Contains(err.Error(), "discover") {
-		t.Errorf("discovery error = %v, want wrapped discover context", err)
 	}
 }
 
@@ -387,21 +386,22 @@ func TestDo_TransportErrorsExhausted(t *testing.T) {
 	client := newFailoverTestClient(t, discovery, transport, WithMaxAttempts(2))
 
 	response, err := client.NewRequest(http.MethodGet, "/orders").Do(t.Context())
-	var transportErr *TransportError
-	if !errors.As(err, &transportErr) {
-		t.Fatalf("Do() error = %v, want *TransportError", err)
+	var failure *Failure
+	if !errors.As(err, &failure) || failure.Kind != KindTransport {
+		t.Fatalf("Do() error = %v, want KindTransport Failure", err)
 	}
 	if response != nil {
 		t.Errorf("Do() response = %#v, want nil for transport failures", response)
 	}
-	if !strings.Contains(err.Error(), "after 2 attempts") {
-		t.Errorf("Do() error = %q, want attempt count", err)
+	if failure.attempt != 2 || failure.attemptLimit != 2 {
+		t.Errorf("Failure attempt = %d/%d, want 2/2", failure.attempt, failure.attemptLimit)
 	}
 }
 
 func TestDo_TransportErrorAttempts(t *testing.T) {
+	cause := errors.New("connection failed")
 	transport := &fakeTransport{results: map[string][]fakeTransportResult{
-		"a": {{err: &TransportError{Err: errors.New("connection failed")}}},
+		"a": {{err: cause}},
 	}, next: make(map[string]int)}
 	client := newFailoverTestClient(t,
 		fakeDiscovery{instances: []Instance{{ID: "a", Host: "a", Port: 8080}}},
@@ -410,8 +410,12 @@ func TestDo_TransportErrorAttempts(t *testing.T) {
 	)
 
 	_, err := client.NewRequest(http.MethodGet, "/orders").Do(t.Context())
-	if got, want := err.Error(), "jinx: transport: after 1 attempts: connection failed"; got != want {
-		t.Errorf("Do() error = %q, want %q", got, want)
+	var failure *Failure
+	if !errors.As(err, &failure) || failure.Kind != KindTransport {
+		t.Fatalf("Do() error = %v, want KindTransport Failure", err)
+	}
+	if !errors.Is(failure, cause) {
+		t.Errorf("Failure does not unwrap transport cause %v", cause)
 	}
 }
 
@@ -425,8 +429,10 @@ func TestDo_MarshalErrorNoNetwork(t *testing.T) {
 	_, err := client.NewRequest(http.MethodPost, "/orders").
 		SetBody(make(chan int)).
 		Do(t.Context())
-	if err == nil || !strings.Contains(err.Error(), "marshal") {
-		t.Errorf("Do() error = %v, want marshal error", err)
+	var failure *Failure
+	var marshalErr *json.UnsupportedTypeError
+	if !errors.As(err, &failure) || failure.Kind != KindInvalidCall || !errors.As(failure, &marshalErr) {
+		t.Errorf("Do() error = %v, want KindInvalidCall wrapping marshal error", err)
 	}
 	hosts, _ := transport.snapshot()
 	if len(hosts) != 0 {
@@ -449,8 +455,9 @@ func TestDo_ResultDecodeError(t *testing.T) {
 	response, err := client.NewRequest(http.MethodGet, "/orders").
 		SetResult(&result).
 		Do(t.Context())
-	if err == nil || !strings.Contains(err.Error(), "decode result") {
-		t.Errorf("Do() error = %v, want result decode error", err)
+	var failure *Failure
+	if !errors.As(err, &failure) || failure.Kind != KindDecode {
+		t.Errorf("Do() error = %v, want KindDecode Failure", err)
 	}
 	if response == nil || response.StatusCode != http.StatusOK {
 		t.Errorf("Do() response = %#v, want 200 response", response)
@@ -506,7 +513,9 @@ func TestDo_MissingPathParamNoNetwork(t *testing.T) {
 	)
 
 	_, err := client.NewRequest(http.MethodGet, "/orders/:id").Do(t.Context())
-	if err == nil || !strings.Contains(err.Error(), `missing path param "id"`) {
+	var failure *Failure
+	if !errors.As(err, &failure) || failure.Kind != KindInvalidCall ||
+		!strings.Contains(failure.Err.Error(), `missing path param "id"`) {
 		t.Errorf("Do() error = %v, want missing path param error", err)
 	}
 	hosts, _ := transport.snapshot()

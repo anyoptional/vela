@@ -148,7 +148,9 @@ func TestRequest_MissingPathParamFailsBeforeNetwork(t *testing.T) {
 		t.Fatalf("New() error = %v", err)
 	}
 	_, err = client.NewRequest(http.MethodGet, "/orders/:id").Do(t.Context())
-	if err == nil || !strings.Contains(err.Error(), `missing path param "id"`) {
+	var failure *Failure
+	if !errors.As(err, &failure) || failure.Kind != KindInvalidCall ||
+		!strings.Contains(failure.Err.Error(), `missing path param "id"`) {
 		t.Fatalf("Do() error = %v, want missing path parameter error", err)
 	}
 	if requests != 0 {

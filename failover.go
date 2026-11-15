@@ -1,13 +1,9 @@
 package jinx
 
 import (
-	"context"
-	"net/http"
 	"sync"
 	"time"
 )
-
-type transport func(ctx context.Context, req *http.Request) (*http.Response, error)
 
 type insKey struct {
 	secure bool

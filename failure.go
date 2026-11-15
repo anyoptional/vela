@@ -14,7 +14,7 @@ const failureExcerptLimit = 512
 type Kind uint8
 
 const (
-	// KindInvalidCall marks invalid request construction or policy decisions.
+	// KindInvalidCall marks invalid request construction, instance selection, or policy decisions.
 	KindInvalidCall Kind = iota
 	// KindDiscovery marks registry failures or an empty instance pool.
 	KindDiscovery

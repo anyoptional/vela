@@ -8,6 +8,9 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"reflect"
+	"strings"
 
 	"resty.dev/v3"
 )
@@ -35,7 +38,7 @@ func (l *restySlogLogger) Debugf(format string, args ...any) {
 	l.logger.Debug(fmt.Sprintf(format, args...))
 }
 
-func newRestyTransport(cfg config, logger *slog.Logger) transport {
+func newRestyTransport(cfg config, logger *slog.Logger) Transport {
 	httpClient := cfg.httpClient
 	if httpClient == nil {
 		httpClient = &http.Client{}
@@ -108,5 +111,33 @@ func singleValueHeaders(headers http.Header) map[string]string {
 }
 
 func sanitizeTransportError(err error) error {
-	return &TransportError{Err: errors.New(err.Error())}
+	if err == nil {
+		return nil
+	}
+	if urlErr, ok := err.(*url.Error); ok {
+		return &url.Error{
+			Op:  urlErr.Op,
+			URL: sanitizeEndpoint(urlErr.URL),
+			Err: sanitizeTransportError(urlErr.Err),
+		}
+	}
+	if multiErr, ok := err.(interface{ Unwrap() []error }); ok {
+		causes := multiErr.Unwrap()
+		sanitized := make([]error, 0, len(causes))
+		for _, cause := range causes {
+			sanitized = append(sanitized, sanitizeTransportError(cause))
+		}
+		return errors.Join(sanitized...)
+	}
+	if cause := errors.Unwrap(err); cause != nil {
+		return sanitizeTransportError(cause)
+	}
+	errType := reflect.TypeOf(err)
+	for errType != nil && errType.Kind() == reflect.Pointer {
+		errType = errType.Elem()
+	}
+	if errType != nil && strings.HasPrefix(errType.PkgPath(), "resty.dev/v3") {
+		return errors.New("jinx: HTTP transport failed")
+	}
+	return err
 }

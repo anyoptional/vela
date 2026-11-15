@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"reflect"
 	"strings"
 	"testing"
@@ -111,9 +112,8 @@ func TestRestyTransport_Timeout(t *testing.T) {
 	}
 
 	_, err = transport(t.Context(), req)
-	var transportErr *TransportError
-	if !errors.As(err, &transportErr) {
-		t.Fatalf("transport() error = %v, want *TransportError", err)
+	if err == nil {
+		t.Fatal("transport() error = nil, want timeout error")
 	}
 }
 
@@ -128,14 +128,24 @@ func TestRestyTransport_ErrorSanitized(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRequestWithContext(): %v", err)
 	}
+	req.URL.User = url.UserPassword("user", "password")
+	req.URL.RawQuery = "token=secret"
 
 	_, err = transport(t.Context(), req)
-	var transportErr *TransportError
-	if !errors.As(err, &transportErr) {
-		t.Fatalf("transport() error = %v, want *TransportError", err)
+	if err == nil {
+		t.Fatal("transport() error = nil, want connection error")
+	}
+	for _, secret := range []string{"user", "password", "token=secret"} {
+		if strings.Contains(err.Error(), secret) {
+			t.Errorf("transport error %q exposes %q", err, secret)
+		}
 	}
 	for current := err; current != nil; current = errors.Unwrap(current) {
-		if typ := reflect.TypeOf(current); typ != nil && typ.PkgPath() == "resty.dev/v3" {
+		typ := reflect.TypeOf(current)
+		for typ != nil && typ.Kind() == reflect.Pointer {
+			typ = typ.Elem()
+		}
+		if typ != nil && strings.HasPrefix(typ.PkgPath(), "resty.dev/v3") {
 			t.Errorf("error chain exposes resty type %s", typ)
 		}
 	}
