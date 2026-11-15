@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/zeromicro/go-zero/tools/goctl/api/gogen"
 	"github.com/zeromicro/go-zero/tools/goctl/api/spec"
 	"github.com/zeromicro/go-zero/tools/goctl/util/stringx"
 )
@@ -94,6 +95,9 @@ func gen(api *spec.ApiSpec, dir string) error {
 			return err
 		}
 		data.TypesPackage = typesPackage
+		if err := writeTypesFile(api, dir); err != nil {
+			return err
+		}
 	}
 
 	var source bytes.Buffer
@@ -106,6 +110,29 @@ func gen(api *spec.ApiSpec, dir string) error {
 	}
 	if err := os.WriteFile(filepath.Join(dir, "client.go"), formatted, 0o644); err != nil {
 		return fmt.Errorf("jinx-goctl: write client.go: %w", err)
+	}
+	return nil
+}
+
+// writeTypesFile generates internal/types/types.go from the API spec's type
+// declarations, reusing goctl's own type generator so the output matches
+// goctl conventions exactly. The plugin is self-contained: callers do not
+// need to run "goctl api go" first.
+func writeTypesFile(api *spec.ApiSpec, dir string) error {
+	typesDir := filepath.Join(dir, "internal", "types")
+	if err := os.MkdirAll(typesDir, 0o755); err != nil {
+		return fmt.Errorf("jinx-goctl: create types directory: %w", err)
+	}
+	declarations, err := gogen.BuildTypes(api.Types)
+	if err != nil {
+		return fmt.Errorf("jinx-goctl: build types: %w", err)
+	}
+	formatted, err := format.Source([]byte("package types\n\n" + declarations))
+	if err != nil {
+		return fmt.Errorf("jinx-goctl: format generated types: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(typesDir, "types.go"), formatted, 0o644); err != nil {
+		return fmt.Errorf("jinx-goctl: write types.go: %w", err)
 	}
 	return nil
 }

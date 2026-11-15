@@ -186,14 +186,13 @@ cd goctl
 go build -o goctl-jinx .
 ```
 
-在 go-zero API 项目中，先生成常规类型，再生成 jinx 客户端：
+服务由第三方实现时，只声明如何调用。插件自包含——**不要运行 `goctl api go`**（它会生成 server 侧 routes/handler/logic 等不需要的代码），直接一条命令：
 
 ```sh
-goctl api go -api order.api -dir .
 goctl api plugin --plugin goctl-jinx -api order.api -dir .
 ```
 
-插件会生成包含服务接口、强类型客户端配置和 fallback 分派的 `client.go`。详细的服务发现、URL 直连、静态 fallback、fallback 工厂及自定义可用性示例见 [goctl 插件指南](./goctl/README.zh-CN.md)。
+插件会生成 `client.go`（服务接口、强类型客户端配置、fallback 分派）和 `internal/types/types.go`（复用 goctl 的类型生成器）。详细的服务发现、URL 直连、静态 fallback、fallback 工厂及自定义可用性示例见 [goctl 插件指南](./goctl/README.zh-CN.md)。
 
 ## 开发
 

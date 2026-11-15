@@ -172,21 +172,17 @@ func prepareGeneratedClientModule(t *testing.T) string {
 	api.Service.Groups = api.Service.Groups[:1]
 	dir := t.TempDir()
 	writeBuildModule(t, dir)
-	if err := os.MkdirAll(filepath.Join(dir, "internal", "types"), 0o755); err != nil {
-		t.Fatalf("MkdirAll(types): %v", err)
-	}
-	typesSource := `package types
-
-type GetOrderReq struct{ Id int64 }
-type GetOrderResp struct{ Id int64 }
-type CreateOrderReq struct{ Name string }
-type CreateOrderResp struct{ Id int64 }
-`
-	if err := os.WriteFile(filepath.Join(dir, "internal", "types", "types.go"), []byte(typesSource), 0o600); err != nil {
-		t.Fatalf("WriteFile(types.go): %v", err)
-	}
 	if err := gen(api, dir); err != nil {
 		t.Fatalf("gen(): %v", err)
+	}
+	typesSource, err := os.ReadFile(filepath.Join(dir, "internal", "types", "types.go"))
+	if err != nil {
+		t.Fatalf("ReadFile(types.go): %v", err)
+	}
+	for _, want := range []string{"GetOrderReq", "GetOrderResp", "CreateOrderReq", "CreateOrderResp"} {
+		if !strings.Contains(string(typesSource), want) {
+			t.Errorf("generated types.go missing %q:\n%s", want, typesSource)
+		}
 	}
 	return dir
 }

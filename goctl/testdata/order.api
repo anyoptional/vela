@@ -41,3 +41,4 @@ service order-api {
 	@handler SearchOrders
 	get /orders (SearchOrderReq) returns (GetOrderResp)
 }
+
