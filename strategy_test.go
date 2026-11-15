@@ -50,6 +50,63 @@ func TestAttemptPolicy_NextAndFirstDecisionWins(t *testing.T) {
 	}
 }
 
+func TestAttemptPolicy_ReplacesDefaultsAndCanRetry429(t *testing.T) {
+	t.Run("replacement does not inherit default 5xx retry", func(t *testing.T) {
+		policyCalls := 0
+		transportCalls := 0
+		client := newStrategyClient(t, Target{Name: "orders", URL: "http://orders.test"},
+			WithMaxAttempts(3),
+			WithAttemptPolicies([]AttemptPolicy{
+				func(context.Context, *Failure, AttemptState) (AttemptAction, error) {
+					policyCalls++
+					return AttemptNext, nil
+				},
+			}),
+			WithTransport(func(_ context.Context, req *http.Request) (*http.Response, error) {
+				transportCalls++
+				return strategyResponse(req, http.StatusServiceUnavailable, "down"), nil
+			}),
+		)
+
+		_, err := client.NewRequest(http.MethodGet, "/orders").Do(t.Context())
+		requireFailureKind(t, err, KindStatus)
+		if policyCalls != 1 || transportCalls != 1 {
+			t.Errorf("policy calls = %d, transport calls = %d, want one attempt", policyCalls, transportCalls)
+		}
+	})
+
+	t.Run("custom policy retries 429", func(t *testing.T) {
+		transportCalls := 0
+		client := newStrategyClient(t, Target{Name: "orders", URL: "http://orders.test"},
+			WithMaxAttempts(2),
+			WithAttemptPolicies([]AttemptPolicy{
+				func(_ context.Context, failure *Failure, _ AttemptState) (AttemptAction, error) {
+					if failure.Kind == KindStatus && failure.StatusCode == http.StatusTooManyRequests {
+						return AttemptRetrySameEndpoint, nil
+					}
+					return AttemptStop, nil
+				},
+			}),
+			WithTransport(func(_ context.Context, req *http.Request) (*http.Response, error) {
+				transportCalls++
+				status := http.StatusTooManyRequests
+				if transportCalls == 2 {
+					status = http.StatusNoContent
+				}
+				return strategyResponse(req, status, ""), nil
+			}),
+		)
+
+		response, err := client.NewRequest(http.MethodGet, "/orders").Do(t.Context())
+		if err != nil {
+			t.Fatalf("Do() error = %v", err)
+		}
+		if transportCalls != 2 || response == nil || response.StatusCode != http.StatusNoContent {
+			t.Errorf("transport calls = %d, response = %#v, want successful second attempt", transportCalls, response)
+		}
+	})
+}
+
 func TestAttemptPolicy_ErrorPreservesFailure(t *testing.T) {
 	policyErr := errors.New("policy rejected failure")
 	var original *Failure
@@ -279,6 +336,45 @@ func TestDo_ClassifiesBoundariesAndUnwrapsCause(t *testing.T) {
 			t.Errorf("decode result = response %#v, failure %#v", response, failure)
 		}
 	})
+}
+
+func TestAttemptPolicy_CanRetryDecodeFailure(t *testing.T) {
+	calls := 0
+	client := newStrategyClient(t, Target{Name: "orders", URL: "http://orders.test"},
+		WithMaxAttempts(2),
+		WithAttemptPolicies([]AttemptPolicy{
+			func(_ context.Context, failure *Failure, _ AttemptState) (AttemptAction, error) {
+				if failure.Kind == KindDecode {
+					return AttemptRetrySameEndpoint, nil
+				}
+				return AttemptNext, nil
+			},
+		}),
+		WithTransport(func(_ context.Context, req *http.Request) (*http.Response, error) {
+			calls++
+			if calls == 1 {
+				return strategyResponse(req, http.StatusOK, "not-json"), nil
+			}
+			return strategyResponse(req, http.StatusOK, `{"name":"recovered"}`), nil
+		}),
+	)
+	var result struct {
+		Name string `json:"name"`
+	}
+
+	response, err := client.NewRequest(http.MethodGet, "/orders").SetResult(&result).Do(t.Context())
+	if err != nil {
+		t.Fatalf("Do() error = %v", err)
+	}
+	if calls != 2 {
+		t.Errorf("transport calls = %d, want 2", calls)
+	}
+	if result.Name != "recovered" {
+		t.Errorf("decoded result = %#v, want recovered name", result)
+	}
+	if response == nil || response.StatusCode != http.StatusOK {
+		t.Errorf("response = %#v, want status %d", response, http.StatusOK)
+	}
 }
 
 func TestDo_DistinguishesCallerCancellationFromAttemptTimeout(t *testing.T) {

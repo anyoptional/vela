@@ -278,7 +278,7 @@ func (r *Request) Do(ctx context.Context) (*Response, error) {
 			} else if httpResponse.StatusCode >= http.StatusOK && httpResponse.StatusCode < http.StatusMultipleChoices {
 				if r.result != nil {
 					if err := json.Unmarshal(responseBody, r.result); err != nil {
-						return lastResponse, client.failureForAttempt(
+						failure = client.failureForAttempt(
 							KindDecode,
 							0,
 							fmt.Errorf("decode result: %w", err),
@@ -289,7 +289,9 @@ func (r *Request) Do(ctx context.Context) (*Response, error) {
 						)
 					}
 				}
-				return lastResponse, nil
+				if failure == nil {
+					return lastResponse, nil
+				}
 			} else {
 				failure = client.failureForAttempt(
 					KindStatus,
