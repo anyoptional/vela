@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"reflect"
 	"strings"
 	"sync"
@@ -168,8 +169,17 @@ type fakeTransport struct {
 func (f *fakeTransport) do(_ context.Context, req *http.Request) (*http.Response, error) {
 	f.mu.Lock()
 	host := req.URL.Hostname()
+	fullURL := req.URL.String()
+	// Mirror resty's LoadBalancer composition: service-mode requests carry
+	// a relative path and the chosen base URL in the context.
+	if selection, ok := req.Context().Value(attemptSelectionKey{}).(*attemptSelection); ok && selection != nil {
+		if base, err := url.Parse(selection.base); err == nil {
+			host = base.Hostname()
+		}
+		fullURL = selection.base + req.URL.String()
+	}
 	f.hosts = append(f.hosts, host)
-	f.urls = append(f.urls, req.URL.String())
+	f.urls = append(f.urls, fullURL)
 	var body string
 	if req.Body != nil {
 		read, err := io.ReadAll(req.Body)

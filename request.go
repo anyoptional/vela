@@ -186,7 +186,7 @@ func (r *Request) Do(ctx context.Context) (*Response, error) {
 			currentEndpoint = targetURL
 		} else if retrySame {
 			instance = currentInstance
-			targetURL = currentEndpoint
+			targetURL = resolvedPath
 		} else {
 			candidates := untriedInstances(instances, tried)
 			if len(candidates) == 0 {
@@ -211,9 +211,9 @@ func (r *Request) Do(ctx context.Context) (*Response, error) {
 			if !containsInstance(candidates, instance) {
 				return lastResponse, client.newFailure(KindInvalidCall, errors.New("load balancer returned an unknown instance"))
 			}
-			targetURL = buildURLFromPath(instance, resolvedPath)
 			currentInstance = instance
-			currentEndpoint = targetURL
+			currentEndpoint = buildURLFromPath(instance, resolvedPath)
+			targetURL = resolvedPath
 		}
 
 		var bodyReader io.Reader
@@ -221,6 +221,15 @@ func (r *Request) Do(ctx context.Context) (*Response, error) {
 			bodyReader = bytes.NewReader(body)
 		}
 		attemptCtx, cancelAttempt := context.WithTimeout(ctx, r.effectiveTimeout())
+		if !direct {
+			// Hand the chosen base URL to resty's LoadBalancer bridge: resty
+			// receives the relative path and composes the final URL from
+			// this base.
+			attemptCtx = context.WithValue(attemptCtx, attemptSelectionKey{}, &attemptSelection{
+				base:   instanceBaseURL(instance),
+				chosen: instance,
+			})
+		}
 		httpRequest, err := http.NewRequestWithContext(attemptCtx, r.method, targetURL, bodyReader)
 		if err != nil {
 			cancelAttempt()
@@ -243,7 +252,7 @@ func (r *Request) Do(ctx context.Context) (*Response, error) {
 		httpRequest.Header = headers
 		if ctx.Err() != nil {
 			cancelAttempt()
-			return lastResponse, client.canceledFailure(context.Cause(ctx), attempts, lastFailure, targetURL)
+			return lastResponse, client.canceledFailure(context.Cause(ctx), attempts, lastFailure, currentEndpoint)
 		}
 
 		attempts++
@@ -268,23 +277,23 @@ func (r *Request) Do(ctx context.Context) (*Response, error) {
 			}
 			cancelAttempt()
 			if ctx.Err() != nil {
-				return lastResponse, client.canceledFailure(errors.Join(err, context.Cause(ctx)), attempts, nil, targetURL)
+				return lastResponse, client.canceledFailure(errors.Join(err, context.Cause(ctx)), attempts, nil, currentEndpoint)
 			}
 			if attemptTimedOut {
 				err = errors.Join(err, context.DeadlineExceeded)
 			}
-			failure = client.failureForAttempt(KindTransport, 0, err, attempts, instance, targetURL, "")
+			failure = client.failureForAttempt(KindTransport, 0, err, attempts, instance, currentEndpoint, "")
 		} else if httpResponse == nil {
 			cancelAttempt()
 			lastResponse = nil
 			if ctx.Err() != nil {
-				return lastResponse, client.canceledFailure(context.Cause(ctx), attempts, nil, targetURL)
+				return lastResponse, client.canceledFailure(context.Cause(ctx), attempts, nil, currentEndpoint)
 			}
 			var cause error = errors.New("transport returned nil response")
 			if attemptTimedOut {
 				cause = errors.Join(cause, context.DeadlineExceeded)
 			}
-			failure = client.failureForAttempt(KindTransport, 0, cause, attempts, instance, targetURL, "")
+			failure = client.failureForAttempt(KindTransport, 0, cause, attempts, instance, currentEndpoint, "")
 		} else {
 			responseBody, readErr := readResponseBody(httpResponse)
 			attemptTimedOut = attemptCtx.Err() != nil && ctx.Err() == nil
@@ -301,10 +310,10 @@ func (r *Request) Do(ctx context.Context) (*Response, error) {
 						fmt.Errorf("read response body: %w", readErr),
 						attempts,
 						instance,
-						targetURL,
+						currentEndpoint,
 						"",
 					)
-					return lastResponse, client.canceledFailure(context.Cause(ctx), attempts, previous, targetURL)
+					return lastResponse, client.canceledFailure(context.Cause(ctx), attempts, previous, currentEndpoint)
 				}
 				if attemptTimedOut {
 					readErr = errors.Join(readErr, context.DeadlineExceeded)
@@ -315,7 +324,7 @@ func (r *Request) Do(ctx context.Context) (*Response, error) {
 					fmt.Errorf("read response body: %w", readErr),
 					attempts,
 					instance,
-					targetURL,
+					currentEndpoint,
 					"",
 				)
 			} else if attemptTimedOut {
@@ -325,7 +334,7 @@ func (r *Request) Do(ctx context.Context) (*Response, error) {
 					context.DeadlineExceeded,
 					attempts,
 					instance,
-					targetURL,
+					currentEndpoint,
 					"",
 				)
 			} else if httpResponse.StatusCode >= http.StatusOK && httpResponse.StatusCode < http.StatusMultipleChoices {
@@ -337,7 +346,7 @@ func (r *Request) Do(ctx context.Context) (*Response, error) {
 							fmt.Errorf("decode result: %w", err),
 							attempts,
 							instance,
-							targetURL,
+							currentEndpoint,
 							"",
 						)
 					}
@@ -352,7 +361,7 @@ func (r *Request) Do(ctx context.Context) (*Response, error) {
 					fmt.Errorf("unexpected status %d", httpResponse.StatusCode),
 					attempts,
 					instance,
-					targetURL,
+					currentEndpoint,
 					string(responseBody[:min(len(responseBody), failureExcerptLimit)]),
 				)
 			}
@@ -364,7 +373,7 @@ func (r *Request) Do(ctx context.Context) (*Response, error) {
 		tried[keyFor(instance)] = struct{}{}
 		lastFailure = failure
 		if ctx.Err() != nil {
-			return lastResponse, client.canceledFailure(context.Cause(ctx), attempts, failure, targetURL)
+			return lastResponse, client.canceledFailure(context.Cause(ctx), attempts, failure, currentEndpoint)
 		}
 
 		untried := 1
@@ -384,7 +393,7 @@ func (r *Request) Do(ctx context.Context) (*Response, error) {
 			if policyFailure != nil {
 				previous = policyFailure
 			}
-			return lastResponse, client.canceledFailure(context.Cause(ctx), attempts, previous, targetURL)
+			return lastResponse, client.canceledFailure(context.Cause(ctx), attempts, previous, currentEndpoint)
 		}
 		if policyFailure != nil {
 			return lastResponse, policyFailure

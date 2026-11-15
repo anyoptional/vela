@@ -46,7 +46,8 @@ func newRestyTransport(cfg config, logger logr.Logger) Transport {
 	client := resty.NewWithClient(httpClient).
 		SetRetryCount(0).
 		SetHeader("User-Agent", "vela").
-		SetLogger(newRestyLogrLogger(logger))
+		SetLogger(newRestyLogrLogger(logger)).
+		SetLoadBalancer(restyLoadBalancer{})
 
 	return func(ctx context.Context, req *http.Request) (*http.Response, error) {
 		var body []byte

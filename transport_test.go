@@ -155,3 +155,30 @@ func TestRestyTransport_ErrorSanitized(t *testing.T) {
 		}
 	}
 }
+
+func TestRestyTransport_LoadBalancerComposition(t *testing.T) {
+	var gotURI string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotURI = r.RequestURI
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(server.Close)
+	transport := newRestyTransport(config{httpClient: server.Client()}, logr.Discard())
+
+	ctx := context.WithValue(t.Context(), attemptSelectionKey{}, &attemptSelection{
+		base:   server.URL,
+		chosen: Instance{ID: "orders-1"},
+	})
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "/orders/42?page=1", nil)
+	if err != nil {
+		t.Fatalf("NewRequestWithContext(): %v", err)
+	}
+	response, err := transport(ctx, req)
+	if err != nil {
+		t.Fatalf("transport() error = %v", err)
+	}
+	response.Body.Close()
+	if gotURI != "/orders/42?page=1" {
+		t.Errorf("server URI = %q, want /orders/42?page=1 (base URL from LB bridge)", gotURI)
+	}
+}

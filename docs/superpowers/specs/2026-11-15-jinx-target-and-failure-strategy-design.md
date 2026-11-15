@@ -187,6 +187,7 @@ func WithTransport(Transport) Option // 覆盖默认 resty transport
 ```
 
 - 与 `WithHTTPClient` 分工：前者替换整个往返（测试、拦截），后者只替换底层 `http.Client`（TLS/代理）。
+- **resty LoadBalancer 桥接**（内部）：服务模式每尝试由 Do 循环选定实例（tried/冷却语义不变），选中 base URL 经请求 ctx 交给内部 `restyLoadBalancer` 适配器（实现 resty 的 `LoadBalancer` 接口）；resty 收到相对 path，经 `NextWithContext` 取 base 并拼接最终 URL。`Feedback` 不处理冷却（resty 把 5xx 也报失败，vela 规定只有传输错误冷却）。resty 类型不出公开 API——适配器未导出，公开面仍是 vela 的 `LoadBalancer`。
 
 ### 日志
 
