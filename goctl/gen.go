@@ -17,6 +17,7 @@ import (
 
 	"github.com/zeromicro/go-zero/tools/goctl/api/gogen"
 	"github.com/zeromicro/go-zero/tools/goctl/api/spec"
+	namingformat "github.com/zeromicro/go-zero/tools/goctl/util/format"
 	"github.com/zeromicro/go-zero/tools/goctl/util/stringx"
 )
 
@@ -57,12 +58,19 @@ type bodyField struct {
 	Field string
 }
 
-func gen(api *spec.ApiSpec, dir string) error {
+func gen(api *spec.ApiSpec, dir, style string) error {
 	if api == nil {
 		return errors.New("jinx-goctl: API spec is nil")
 	}
 	if api.Service.Name == "" {
 		return errors.New("jinx-goctl: service name is empty")
+	}
+	fileBase, err := namingformat.FileNamingFormat(cmp.Or(style, "go_zero"), strings.ReplaceAll(api.Service.Name, "-", "_"))
+	if err != nil {
+		return fmt.Errorf("jinx-goctl: file naming style %q: %w", style, err)
+	}
+	if fileBase == "" || fileBase == "." || fileBase == ".." || strings.ContainsAny(fileBase, `/\`) {
+		return fmt.Errorf("jinx-goctl: invalid file base name %q for service %q", fileBase, api.Service.Name)
 	}
 
 	serviceType := toCamel(api.Service.Name)
@@ -80,7 +88,7 @@ func gen(api *spec.ApiSpec, dir string) error {
 		ClientType:       stringx.From(serviceType).Untitle() + "Client",
 		ClientConfigType: serviceType + "ClientConfig",
 		Constructor:      "New" + serviceType + "Client",
-		FileBase:         snakeCase(api.Service.Name),
+		FileBase:         fileBase,
 	}
 	if !token.IsIdentifier(data.ClientType) || !token.IsIdentifier(data.ClientConfigType) || !token.IsIdentifier(data.Constructor) {
 		return fmt.Errorf("jinx-goctl: invalid generated client name for service %q", api.Service.Name)
@@ -379,8 +387,4 @@ func quoted(value string) string {
 
 func toCamel(value string) string {
 	return stringx.From(strings.ReplaceAll(value, "-", "_")).ToCamel()
-}
-
-func snakeCase(value string) string {
-	return strings.ToLower(strings.ReplaceAll(value, "-", "_"))
 }

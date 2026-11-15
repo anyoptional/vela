@@ -1,6 +1,6 @@
 # jinx-goctl
 
-`jinx-goctl` 是 goctl API 插件，用于生成强类型服务接口、jinx 客户端配置和 fallback 分派代码。插件会在指定目录生成 `<service>_api.go` 和 `types/<service>_api.go`（文件名 = service 块名的蛇形小写，如 `order-api` → `order_api.go`），不同服务的 api 文件生成各自文件，可分开管理。
+`jinx-goctl` 是 goctl API 插件，用于生成强类型服务接口、jinx 客户端配置和 fallback 分派代码。插件会在指定目录生成 `<service>` 命名的文件：文件名遵循 goctl `--style` 参数（`go_zero` 默认 → `order_api.go`，`gozero` → `orderApi.go`），types 在 `types/` 下同名文件。不同服务的 api 文件生成各自文件，可分开管理。
 
 预期用法：在**独立的契约模块**里维护 api 文件并生成代码，需要调用的模块 import 契约模块即可。types 是导出的 `types` 子包（不是 `internal/`）——否则消费模块无法 import 请求/响应类型。
 

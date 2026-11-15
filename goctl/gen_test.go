@@ -20,7 +20,7 @@ func TestGenerate_Golden(t *testing.T) {
 
 	dir := t.TempDir()
 	writeModuleFile(t, dir)
-	if err := gen(api, dir); err != nil {
+	if err := gen(api, dir, ""); err != nil {
 		t.Fatalf("gen(): %v", err)
 	}
 
@@ -51,7 +51,7 @@ func TestGenerate_MixedJSONAndFormError(t *testing.T) {
 	}
 	dir := t.TempDir()
 	writeModuleFile(t, dir)
-	err = gen(api, dir)
+	err = gen(api, dir, "")
 	if err == nil || !strings.Contains(err.Error(), `mixes json and form fields`) {
 		t.Fatalf("gen() error = %v, want mixed json and form error", err)
 	}
@@ -64,7 +64,7 @@ func TestGenerate_DeleteHasNoBody(t *testing.T) {
 
 	dir := t.TempDir()
 	writeModuleFile(t, dir)
-	if err := gen(api, dir); err != nil {
+	if err := gen(api, dir, ""); err != nil {
 		t.Fatalf("gen(): %v", err)
 	}
 	generated, err := os.ReadFile(filepath.Join(dir, "order_api.go"))
@@ -94,7 +94,7 @@ func TestGenerate_MatchesDirectoryPackage(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "existing.go"), []byte("package app\n"), 0o600); err != nil {
 		t.Fatalf("WriteFile(existing.go): %v", err)
 	}
-	if err := gen(api, dir); err != nil {
+	if err := gen(api, dir, ""); err != nil {
 		t.Fatalf("gen(): %v", err)
 	}
 	generated, err := os.ReadFile(filepath.Join(dir, "order_api.go"))
@@ -103,6 +103,21 @@ func TestGenerate_MatchesDirectoryPackage(t *testing.T) {
 	}
 	if !bytes.HasPrefix(generated, []byte("package app\n")) {
 		t.Errorf("generated package = %q, want app", strings.SplitN(string(generated), "\n", 2)[0])
+	}
+}
+
+func TestGenerate_GozeroStyle(t *testing.T) {
+	api := parseFixture(t)
+	api.Service.Groups = api.Service.Groups[:1]
+	dir := t.TempDir()
+	writeModuleFile(t, dir)
+	if err := gen(api, dir, "gozero"); err != nil {
+		t.Fatalf("gen(): %v", err)
+	}
+	for _, file := range []string{"orderApi.go", filepath.Join("types", "orderApi.go")} {
+		if _, err := os.Stat(filepath.Join(dir, file)); err != nil {
+			t.Errorf("expected %s: %v", file, err)
+		}
 	}
 }
 
@@ -192,7 +207,7 @@ func prepareGeneratedClientModule(t *testing.T) string {
 	api.Service.Groups = api.Service.Groups[:1]
 	dir := t.TempDir()
 	writeBuildModule(t, dir)
-	if err := gen(api, dir); err != nil {
+	if err := gen(api, dir, ""); err != nil {
 		t.Fatalf("gen(): %v", err)
 	}
 	typesSource, err := os.ReadFile(filepath.Join(dir, "types", "order_api.go"))

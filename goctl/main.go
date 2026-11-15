@@ -13,7 +13,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	if err := gen(payload.Api, payload.Dir); err != nil {
+	if err := gen(payload.Api, payload.Dir, payload.Style); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
