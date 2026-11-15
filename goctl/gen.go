@@ -20,14 +20,14 @@ import (
 )
 
 type clientTemplateData struct {
-	Package      string
-	ServiceType  string
-	ClientType   string
-	Constructor  string
-	TypesPackage string
-	HasTypes     bool
-	HasPathArgs  bool
-	Routes       []routeTemplateData
+	Package          string
+	ServiceType      string
+	ClientType       string
+	ClientConfigType string
+	Constructor      string
+	TypesPackage     string
+	HasTypes         bool
+	Routes           []routeTemplateData
 }
 
 type routeTemplateData struct {
@@ -64,12 +64,13 @@ func gen(api *spec.ApiSpec, dir string) error {
 	}
 
 	data := clientTemplateData{
-		Package:     packageName,
-		ServiceType: serviceType,
-		ClientType:  stringx.From(serviceType).Untitle() + "Client",
-		Constructor: "New" + serviceType + "Client",
+		Package:          packageName,
+		ServiceType:      serviceType,
+		ClientType:       stringx.From(serviceType).Untitle() + "Client",
+		ClientConfigType: serviceType + "ClientConfig",
+		Constructor:      "New" + serviceType + "Client",
 	}
-	if !token.IsIdentifier(data.ClientType) || !token.IsIdentifier(data.Constructor) {
+	if !token.IsIdentifier(data.ClientType) || !token.IsIdentifier(data.ClientConfigType) || !token.IsIdentifier(data.Constructor) {
 		return fmt.Errorf("jinx-goctl: invalid generated client name for service %q", api.Service.Name)
 	}
 
@@ -82,7 +83,6 @@ func gen(api *spec.ApiSpec, dir string) error {
 			}
 			data.Routes = append(data.Routes, generated)
 			data.HasTypes = data.HasTypes || generated.RequestType != "" || generated.ResponseType != ""
-			data.HasPathArgs = data.HasPathArgs || len(generated.PathParams) > 0
 		}
 	}
 	if len(data.Routes) == 0 {

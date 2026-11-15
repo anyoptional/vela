@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -16,11 +17,61 @@ type OrderApi interface {
 }
 
 type orderApiClient struct {
-	c *jinx.Client
+	c               *jinx.Client
+	fallback        OrderApi
+	fallbackFactory func(context.Context, *jinx.Failure, *jinx.Response) (OrderApi, error)
+	availability    func(*jinx.Failure) bool
 }
 
-func NewOrderApiClient(c *jinx.Client) OrderApi {
-	return &orderApiClient{c: c}
+type OrderApiClientConfig struct {
+	Target          jinx.Target
+	Discovery       jinx.DiscoveryClient
+	ClientOptions   []jinx.Option
+	Fallback        OrderApi
+	FallbackFactory func(context.Context, *jinx.Failure, *jinx.Response) (OrderApi, error)
+	Availability    func(*jinx.Failure) bool
+}
+
+func NewOrderApiClient(config OrderApiClientConfig) (OrderApi, error) {
+	if config.Fallback != nil && config.FallbackFactory != nil {
+		return nil, errors.New("jinx: fallback and fallback factory are mutually exclusive")
+	}
+	options := append([]jinx.Option{jinx.WithDiscovery(config.Discovery)}, config.ClientOptions...)
+	client, err := jinx.New(config.Target, options...)
+	if err != nil {
+		return nil, err
+	}
+	availability := config.Availability
+	if availability == nil {
+		availability = jinx.DefaultAvailability
+	}
+	return &orderApiClient{
+		c:               client,
+		fallback:        config.Fallback,
+		fallbackFactory: config.FallbackFactory,
+		availability:    availability,
+	}, nil
+}
+
+func (c *orderApiClient) resolveFallback(ctx context.Context, failure *jinx.Failure, response *jinx.Response) (OrderApi, bool, error) {
+	if ctx.Err() != nil || !c.availability(failure) {
+		return nil, false, nil
+	}
+	if c.fallback == nil && c.fallbackFactory == nil {
+		return nil, false, nil
+	}
+	fallback := c.fallback
+	if c.fallbackFactory != nil {
+		var err error
+		fallback, err = c.fallbackFactory(ctx, failure, response)
+		if err != nil {
+			return nil, true, fmt.Errorf("jinx: fallback factory: %w", err)
+		}
+		if fallback == nil {
+			return nil, true, errors.New("jinx: fallback factory returned nil service")
+		}
+	}
+	return fallback, true, nil
 }
 
 func (c *orderApiClient) CreateOrder(ctx context.Context, req *types.CreateOrderReq) (*types.CreateOrderResp, error) {
@@ -28,7 +79,22 @@ func (c *orderApiClient) CreateOrder(ctx context.Context, req *types.CreateOrder
 	request.SetBody(req)
 	var result types.CreateOrderResp
 	request.SetResult(&result)
-	if _, err := request.Do(ctx); err != nil {
+	response, err := request.Do(ctx)
+	if err != nil {
+		var failure *jinx.Failure
+		if errors.As(err, &failure) {
+			fallback, used, fallbackErr := c.resolveFallback(ctx, failure, response)
+			if fallbackErr != nil {
+				return nil, errors.Join(err, fallbackErr)
+			}
+			if used {
+				result, fallbackErr := fallback.CreateOrder(ctx, req)
+				if fallbackErr != nil {
+					return nil, errors.Join(err, fmt.Errorf("jinx: fallback: %w", fallbackErr))
+				}
+				return result, nil
+			}
+		}
 		return nil, err
 	}
 	return &result, nil
@@ -39,7 +105,22 @@ func (c *orderApiClient) GetOrder(ctx context.Context, id int64, req *types.GetO
 	request.SetPathParam("id", fmt.Sprint(id))
 	var result types.GetOrderResp
 	request.SetResult(&result)
-	if _, err := request.Do(ctx); err != nil {
+	response, err := request.Do(ctx)
+	if err != nil {
+		var failure *jinx.Failure
+		if errors.As(err, &failure) {
+			fallback, used, fallbackErr := c.resolveFallback(ctx, failure, response)
+			if fallbackErr != nil {
+				return nil, errors.Join(err, fallbackErr)
+			}
+			if used {
+				result, fallbackErr := fallback.GetOrder(ctx, id, req)
+				if fallbackErr != nil {
+					return nil, errors.Join(err, fmt.Errorf("jinx: fallback: %w", fallbackErr))
+				}
+				return result, nil
+			}
+		}
 		return nil, err
 	}
 	return &result, nil
