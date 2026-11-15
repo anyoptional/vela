@@ -4,24 +4,20 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"maps"
 	"slices"
 
 	eureka "github.com/anyoptional/eureka-go"
 	"github.com/anyoptional/vela"
-	"github.com/go-logr/logr"
 )
 
 type adapter struct {
 	client *eureka.Client
 }
 
-// New adapts an eureka-go client to vela service discovery.
+// New adapts an eureka-go client to vela service discovery. Logging stays
+// with the eureka-go client's own logger (logr to stdout by default).
 func New(client *eureka.Client) vela.DiscoveryClient {
-	if client != nil {
-		client.SetLogger(newSlogLogr(slog.Default()))
-	}
 	return &adapter{client: client}
 }
 
@@ -87,60 +83,6 @@ func mapInstance(in *eureka.Instance, serviceID string) (vela.Instance, bool) {
 		Secure:    in.SecurePort.Enabled,
 		Metadata:  metadata,
 	}, true
-}
-
-type slogSink struct {
-	logger *slog.Logger
-	values []any
-	name   string
-}
-
-func newSlogLogr(logger *slog.Logger) logr.Logger {
-	if logger == nil {
-		logger = slog.Default()
-	}
-	return logr.New(&slogSink{logger: logger})
-}
-
-func (s *slogSink) Init(logr.RuntimeInfo) {}
-
-func (s *slogSink) Enabled(int) bool {
-	return s.logger.Enabled(context.Background(), slog.LevelInfo)
-}
-
-func (s *slogSink) Info(_ int, message string, keysAndValues ...any) {
-	s.logger.Info(message, s.logValues(keysAndValues)...)
-}
-
-func (s *slogSink) Error(err error, message string, keysAndValues ...any) {
-	values := s.logValues(keysAndValues)
-	if err != nil {
-		values = append(values, "error", err)
-	}
-	s.logger.Error(message, values...)
-}
-
-func (s *slogSink) WithValues(keysAndValues ...any) logr.LogSink {
-	values := append(slices.Clone(s.values), keysAndValues...)
-	return &slogSink{logger: s.logger, values: values, name: s.name}
-}
-
-func (s *slogSink) WithName(name string) logr.LogSink {
-	if s.name != "" && name != "" {
-		name = s.name + "." + name
-	} else if s.name != "" {
-		name = s.name
-	}
-	return &slogSink{logger: s.logger, values: slices.Clone(s.values), name: name}
-}
-
-func (s *slogSink) logValues(keysAndValues []any) []any {
-	values := make([]any, 0, len(s.values)+len(keysAndValues)+2)
-	if s.name != "" {
-		values = append(values, "logger", s.name)
-	}
-	values = append(values, s.values...)
-	return append(values, keysAndValues...)
 }
 
 var _ vela.DiscoveryClient = (*adapter)(nil)

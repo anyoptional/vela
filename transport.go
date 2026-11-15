@@ -6,39 +6,39 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"reflect"
 	"strings"
 
+	"github.com/go-logr/logr"
 	"resty.dev/v3"
 )
 
-type restySlogLogger struct {
-	logger *slog.Logger
+// restyLogrLogger adapts the module-wide logr logger to resty's Logger
+// interface. resty only offers printf-style levels, so mapping is
+// Errorf → error, Warnf → V(1), Debugf → V(4).
+type restyLogrLogger struct {
+	logger logr.Logger
 }
 
-func newRestySlogLogger(logger *slog.Logger) *restySlogLogger {
-	if logger == nil {
-		logger = slog.Default()
-	}
-	return &restySlogLogger{logger: logger}
+func newRestyLogrLogger(logger logr.Logger) *restyLogrLogger {
+	return &restyLogrLogger{logger: logger}
 }
 
-func (l *restySlogLogger) Errorf(format string, args ...any) {
-	l.logger.Error(fmt.Sprintf(format, args...))
+func (l *restyLogrLogger) Errorf(format string, args ...any) {
+	l.logger.Error(nil, fmt.Sprintf(format, args...))
 }
 
-func (l *restySlogLogger) Warnf(format string, args ...any) {
-	l.logger.Warn(fmt.Sprintf(format, args...))
+func (l *restyLogrLogger) Warnf(format string, args ...any) {
+	l.logger.V(1).Info(fmt.Sprintf(format, args...))
 }
 
-func (l *restySlogLogger) Debugf(format string, args ...any) {
-	l.logger.Debug(fmt.Sprintf(format, args...))
+func (l *restyLogrLogger) Debugf(format string, args ...any) {
+	l.logger.V(4).Info(fmt.Sprintf(format, args...))
 }
 
-func newRestyTransport(cfg config, logger *slog.Logger) Transport {
+func newRestyTransport(cfg config, logger logr.Logger) Transport {
 	httpClient := cfg.httpClient
 	if httpClient == nil {
 		httpClient = &http.Client{}
@@ -46,7 +46,7 @@ func newRestyTransport(cfg config, logger *slog.Logger) Transport {
 	client := resty.NewWithClient(httpClient).
 		SetRetryCount(0).
 		SetHeader("User-Agent", "vela").
-		SetLogger(newRestySlogLogger(logger))
+		SetLogger(newRestyLogrLogger(logger))
 
 	return func(ctx context.Context, req *http.Request) (*http.Response, error) {
 		var body []byte

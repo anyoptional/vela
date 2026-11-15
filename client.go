@@ -6,6 +6,8 @@ import (
 	"net"
 	"net/http"
 	"time"
+
+	"github.com/go-logr/logr"
 )
 
 const (
@@ -21,7 +23,7 @@ type config struct {
 	connectTimeout    time.Duration
 	maxAttempts       int
 	cooldown          time.Duration
-	logger            *slog.Logger
+	logger            logr.Logger
 	httpClient        *http.Client
 	attemptPolicies   []AttemptPolicy
 	transport         Transport
@@ -36,7 +38,7 @@ type Client struct {
 	discovery DiscoveryClient
 	lb        LoadBalancer
 	cfg       config
-	logger    *slog.Logger
+	logger    logr.Logger
 	cool      cooldownTracker
 	transport Transport
 }
@@ -52,7 +54,7 @@ func New(target Target, opts ...Option) (*Client, error) {
 		perAttemptTimeout: defaultPerAttemptTimeout,
 		maxAttempts:       defaultMaxAttempts,
 		cooldown:          defaultCooldown,
-		logger:            slog.Default(),
+		logger:            defaultLogger(),
 		attemptPolicies:   defaultAttemptPolicies(),
 	}
 	for _, opt := range opts {
@@ -81,9 +83,6 @@ func New(target Target, opts ...Option) (*Client, error) {
 		cfg.cooldown = 0
 	} else if cfg.cooldown == 0 {
 		cfg.cooldown = defaultCooldown
-	}
-	if cfg.logger == nil {
-		cfg.logger = slog.Default()
 	}
 	if cfg.connectTimeout < 0 {
 		cfg.connectTimeout = 0
@@ -164,10 +163,15 @@ func WithCooldown(d time.Duration) Option {
 }
 
 // WithLogger sets the logger used by the client.
-func WithLogger(l *slog.Logger) Option {
+func WithLogger(l logr.Logger) Option {
 	return func(cfg *config) {
 		cfg.logger = l
 	}
+}
+
+// defaultLogger writes to stdout through logr.FromSlogHandler.
+func defaultLogger() logr.Logger {
+	return logr.FromSlogHandler(slog.Default().Handler())
 }
 
 // WithHTTPClient sets the HTTP client used for requests.

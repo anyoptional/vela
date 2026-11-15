@@ -14,6 +14,8 @@ vela 是一个 Go 客户端侧负载均衡 HTTP 库。它支持通过服务发�
 
 ## 核心库快速开始
 
+日志统一走 go-logr：默认 `logr.FromSlogHandler(slog.Default().Handler())` 输出到 stdout，`WithLogger` 注入自定义 logr logger。示例中的 `log` 即该 logger。
+
 ### 服务发现
 
 服务模式必须提供 `Target.Name` 和 `DiscoveryClient`。名称同时用作服务发现 ID 和逻辑客户端标识：
@@ -36,7 +38,7 @@ func getHealth(ctx context.Context, client *vela.Client) error {
 	if err != nil {
 		return err
 	}
-	slog.Info("服务健康状态", "status", result.Status)
+	log.Info("服务健康状态", "status", result.Status)
 	return nil
 }
 ```
@@ -77,7 +79,7 @@ base URL 路径与 route path 合并；path 参数由请求构造器编码。目
 ```go
 var failure *vela.Failure
 if errors.As(err, &failure) {
-	slog.Error("请求失败", "kind", failure.Kind, "status", failure.StatusCode)
+	log.Error(err, "请求失败", "kind", failure.Kind, "status", failure.StatusCode)
 }
 ```
 
@@ -172,7 +174,7 @@ if err := eurekaClient.Start(ctx); err != nil {
 }
 defer func() {
 	if err := eurekaClient.Close(); err != nil {
-		slog.Error("关闭 Eureka 客户端", "error", err)
+		log.Error(err, "关闭 Eureka 客户端")
 	}
 }()
 

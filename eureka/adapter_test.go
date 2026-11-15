@@ -1,10 +1,7 @@
 package eurekaadapter
 
 import (
-	"bytes"
-	"log/slog"
 	"reflect"
-	"strings"
 	"testing"
 
 	eureka "github.com/anyoptional/eureka-go"
@@ -102,16 +99,5 @@ func TestMapInstance(t *testing.T) {
 				t.Errorf("mapInstance() = %#v, want %#v", got, tt.want)
 			}
 		})
-	}
-}
-
-func TestSlogLogr_Smoke(t *testing.T) {
-	var output bytes.Buffer
-	logger := slog.New(slog.NewTextHandler(&output, nil))
-
-	newSlogLogr(logger).Info("eureka started", "service", "orders")
-
-	if got := output.String(); !strings.Contains(got, "eureka started") || !strings.Contains(got, "service=orders") {
-		t.Errorf("log output = %q, want message and key/value", got)
 	}
 }

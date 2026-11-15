@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/go-logr/logr"
 	"io"
-	"log/slog"
 	"net/http"
 	"reflect"
 	"strings"
@@ -38,8 +38,8 @@ func TestNew_Defaults(t *testing.T) {
 	if got, want := client.cfg.cooldown, 10*time.Second; got != want {
 		t.Errorf("cooldown = %v, want %v", got, want)
 	}
-	if client.logger != slog.Default() {
-		t.Error("logger is not slog.Default()")
+	if client.cfg.logger.GetSink() == nil {
+		t.Error("default logger has no sink")
 	}
 	if client.cfg.httpClient == nil {
 		t.Error("httpClient is nil")
@@ -58,7 +58,7 @@ func TestClient_NewRequest(t *testing.T) {
 
 func TestNew_Options(t *testing.T) {
 	lb := testLoadBalancer{}
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logger := logr.Discard()
 	httpClient := &http.Client{Timeout: time.Second}
 	timeout := 250 * time.Millisecond
 	cooldown := 2 * time.Second
@@ -87,8 +87,8 @@ func TestNew_Options(t *testing.T) {
 	if got := client.cfg.cooldown; got != cooldown {
 		t.Errorf("cooldown = %v, want %v", got, cooldown)
 	}
-	if client.logger != logger {
-		t.Error("logger was not applied")
+	if client.cfg.logger.Enabled() {
+		t.Error("logger was not applied: want disabled discard logger")
 	}
 	if client.cfg.httpClient != httpClient {
 		t.Error("httpClient was not applied")

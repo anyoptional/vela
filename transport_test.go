@@ -13,18 +13,20 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/go-logr/logr"
 )
 
 func TestRestyTransport_LoggerBridge(t *testing.T) {
 	var output bytes.Buffer
-	logger := slog.New(slog.NewTextHandler(&output, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	bridge := newRestySlogLogger(logger)
+	logger := logr.FromSlogHandler(slog.NewTextHandler(&output, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	bridge := newRestyLogrLogger(logger)
 
 	bridge.Errorf("failure %d", 1)
 	bridge.Warnf("slow %s", "request")
 	bridge.Debugf("details %t", true)
 
-	for _, want := range []string{"level=ERROR", "failure 1", "level=WARN", "slow request", "level=DEBUG", "details true"} {
+	for _, want := range []string{"level=ERROR", "failure 1", "DEBUG+3", "slow request", "level=DEBUG", "details true"} {
 		if !strings.Contains(output.String(), want) {
 			t.Errorf("log output %q does not contain %q", output.String(), want)
 		}
@@ -62,7 +64,7 @@ func TestRestyTransport_RoundTrip(t *testing.T) {
 	transport := newRestyTransport(config{
 		perAttemptTimeout: time.Second,
 		httpClient:        server.Client(),
-	}, slog.Default())
+	}, logr.Discard())
 	req, err := http.NewRequestWithContext(
 		t.Context(),
 		http.MethodPost,
@@ -106,7 +108,7 @@ func TestRestyTransport_Timeout(t *testing.T) {
 	transport := newRestyTransport(config{
 		perAttemptTimeout: 10 * time.Millisecond,
 		httpClient:        server.Client(),
-	}, slog.Default())
+	}, logr.Discard())
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Millisecond)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, server.URL, nil)
@@ -126,7 +128,7 @@ func TestRestyTransport_ErrorSanitized(t *testing.T) {
 	transport := newRestyTransport(config{
 		perAttemptTimeout: time.Second,
 		httpClient:        &http.Client{},
-	}, slog.Default())
+	}, logr.Discard())
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, server.URL, nil)
 	if err != nil {
 		t.Fatalf("NewRequestWithContext(): %v", err)
